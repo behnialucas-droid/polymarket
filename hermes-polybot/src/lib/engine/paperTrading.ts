@@ -37,10 +37,14 @@ export function computePnl(entryPrice: number, currentPrice: number, size: numbe
 export async function updateOpenPnl(db: DatabaseSync, adapter: DataAdapter): Promise<number> {
   const open = db.prepare("SELECT id, marketId, outcome, entryPrice, simulatedPositionSize FROM PaperTrade WHERE status = 'open'").all() as any[];
   for (const t of open) {
-    const price = await adapter.fetchPrice(t.marketId, t.outcome);
-    const pnl = computePnl(t.entryPrice, price, t.simulatedPositionSize);
-    db.prepare('UPDATE PaperTrade SET currentPrice = ?, unrealizedPnl = ? WHERE id = ?').run(price, pnl, t.id);
-    db.prepare('INSERT INTO PnlSnapshot (paperTradeId, price, pnl) VALUES (?,?,?)').run(t.id, price, pnl);
+    try {
+      const price = await adapter.fetchPrice(t.marketId, t.outcome);
+      const pnl = computePnl(t.entryPrice, price, t.simulatedPositionSize);
+      db.prepare('UPDATE PaperTrade SET currentPrice = ?, unrealizedPnl = ? WHERE id = ?').run(price, pnl, t.id);
+      db.prepare('INSERT INTO PnlSnapshot (paperTradeId, price, pnl) VALUES (?,?,?)').run(t.id, price, pnl);
+    } catch (e: any) {
+      console.warn(`[paperTrading] updateOpenPnl failed for market ${t.marketId}:`, e.message);
+    }
   }
   return open.length;
 }
@@ -50,22 +54,26 @@ export async function reviewOutcomes(db: DatabaseSync, adapter: DataAdapter): Pr
   const open = db.prepare("SELECT * FROM PaperTrade WHERE status = 'open'").all() as any[];
   let resolvedCount = 0;
   for (const t of open) {
-    const m = await adapter.fetchMarket(t.marketId);
-    if (!m.resolved) continue;
-    const won = m.resolvedOutcome?.toUpperCase() === String(t.outcome).toUpperCase();
-    const finalPrice = won ? 1 : 0;
-    const pnl = computePnl(t.entryPrice, finalPrice, t.simulatedPositionSize);
-    db.prepare("UPDATE PaperTrade SET status = 'resolved', currentPrice = ?, realizedPnl = ?, resolvedAt = datetime('now') WHERE id = ?").run(finalPrice, pnl, t.id);
-    const snaps = db.prepare('SELECT price FROM PnlSnapshot WHERE paperTradeId = ? ORDER BY collectedAt LIMIT 24').all(t.id) as any[];
-    const lessons: string[] = [];
-    if (pnl > 0) lessons.push('copy decision paid off');
-    else lessons.push('copy decision lost; review entry conditions');
-    db.prepare(
-      `INSERT INTO OutcomeReview (decisionJournalId, paperTradeId, reviewTime, priceAfter1h, priceAfter6h, priceAfter24h, finalOutcome, simulatedPnl, wasDecisionGood, lessonsJson)
-       VALUES (?,?,datetime('now'),?,?,?,?,?,?,?)`,
-    ).run(t.decisionJournalId, t.id, snaps[0]?.price ?? null, snaps[5]?.price ?? null, snaps[23]?.price ?? null, m.resolvedOutcome ?? null, pnl, pnl > 0 ? 1 : 0, JSON.stringify(lessons));
-    db.prepare('UPDATE DecisionJournal SET reviewOutcome = ? WHERE id = ?').run(pnl > 0 ? 'good' : 'bad', t.decisionJournalId);
-    resolvedCount++;
+    try {
+      const m = await adapter.fetchMarket(t.marketId);
+      if (!m.resolved) continue;
+      const won = m.resolvedOutcome?.toUpperCase() === String(t.outcome).toUpperCase();
+      const finalPrice = won ? 1 : 0;
+      const pnl = computePnl(t.entryPrice, finalPrice, t.simulatedPositionSize);
+      db.prepare("UPDATE PaperTrade SET status = 'resolved', currentPrice = ?, realizedPnl = ?, resolvedAt = datetime('now') WHERE id = ?").run(finalPrice, pnl, t.id);
+      const snaps = db.prepare('SELECT price FROM PnlSnapshot WHERE paperTradeId = ? ORDER BY collectedAt LIMIT 24').all(t.id) as any[];
+      const lessons: string[] = [];
+      if (pnl > 0) lessons.push('copy decision paid off');
+      else lessons.push('copy decision lost; review entry conditions');
+      db.prepare(
+        `INSERT INTO OutcomeReview (decisionJournalId, paperTradeId, reviewTime, priceAfter1h, priceAfter6h, priceAfter24h, finalOutcome, simulatedPnl, wasDecisionGood, lessonsJson)
+         VALUES (?,?,datetime('now'),?,?,?,?,?,?,?)`,
+      ).run(t.decisionJournalId, t.id, snaps[0]?.price ?? null, snaps[5]?.price ?? null, snaps[23]?.price ?? null, m.resolvedOutcome ?? null, pnl, pnl > 0 ? 1 : 0, JSON.stringify(lessons));
+      db.prepare('UPDATE DecisionJournal SET reviewOutcome = ? WHERE id = ?').run(pnl > 0 ? 'good' : 'bad', t.decisionJournalId);
+      resolvedCount++;
+    } catch (e: any) {
+      console.warn(`[paperTrading] reviewOutcomes failed for market ${t.marketId}:`, e.message);
+    }
   }
   return resolvedCount;
 }

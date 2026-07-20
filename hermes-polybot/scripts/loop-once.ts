@@ -12,11 +12,10 @@ const day = now.toISOString().slice(0, 10);
 const hour = now.getUTCHours();
 const parts: string[] = [];
 
-// State file to persist day/hour across API calls
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync, renameSync, readFileSync } from 'node:fs';
 const stateFile = './data/.cycle-state.json';
-let state = { lastLeaderboardDay: '', lastRulesHour: -1 };
-try { state = JSON.parse(readFileSync(stateFile, 'utf8')); } catch { /* first run */ }
+let state = { lastLeaderboardDay: '', lastRulesHour: -1, lastTelegramHour: -1 };
+try { state = { ...state, ...JSON.parse(readFileSync(stateFile, 'utf8')) }; } catch { /* first run */ }
 
 // Once per day: leaderboard + wallet profiles
 if (day !== state.lastLeaderboardDay) {
@@ -36,14 +35,28 @@ const pnlUpdated = await updateOpenPnl(db, adapter);
 const resolved = await reviewOutcomes(db, adapter);
 parts.push(`observed:${observed}`, `scored:${scored}`, `copied:${copied}`, `pnl:${pnlUpdated}`, `resolved:${resolved}`);
 
-// Once per hour: rule updates
+// Once per hour: rule updates & Telegram report
 if (hour !== state.lastRulesHour) {
   const changes = autoUpdateRules(db);
   if (changes.length) parts.push(`rules:${changes.length} changed`);
   state.lastRulesHour = hour;
 }
 
-// Save state
-try { writeFileSync(stateFile, JSON.stringify(state)); } catch { /* ignore */ }
+if (hour !== state.lastTelegramHour) {
+  // Only send if it's not the very first boot to prevent spam
+  if (state.lastTelegramHour !== -1) {
+    const { runHourlyReport } = await import('./report-telegram.ts');
+    await runHourlyReport();
+    parts.push('telegram:sent');
+  }
+  state.lastTelegramHour = hour;
+}
+
+// Atomic save state (SMC-style robustness to prevent corruption)
+try {
+  const tmpFile = stateFile + '.tmp';
+  writeFileSync(tmpFile, JSON.stringify(state));
+  renameSync(tmpFile, stateFile);
+} catch { /* ignore */ }
 
 console.log(parts.join(' '));
