@@ -35,7 +35,7 @@ export async function runHourlyReport() {
   
 <b>Wallet Pipeline (All-time)</b>
 • Wallets Scanned: ${totalScanned.c}
-• Actively Tracked: ${trackedWallets.c}
+• How many wallets is it watching?: ${trackedWallets.c}
 • Trades Copied: ${copied}
 • Trades Ignored: ${ignored}
 • Trades Skipped: ${skipped}

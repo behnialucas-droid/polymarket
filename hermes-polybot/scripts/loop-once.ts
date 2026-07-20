@@ -13,7 +13,8 @@ const hour = now.getUTCHours();
 const parts: string[] = [];
 
 import { writeFileSync, renameSync, readFileSync } from 'node:fs';
-const stateFile = './data/.cycle-state.json';
+import path from 'node:path';
+const stateFile = path.resolve(process.cwd(), 'data', '.cycle-state.json');
 let state = { lastLeaderboardDay: '', lastRulesHour: -1, lastTelegramHour: -1 };
 try { state = { ...state, ...JSON.parse(readFileSync(stateFile, 'utf8')) }; } catch { /* first run */ }
 
@@ -57,6 +58,8 @@ try {
   const tmpFile = stateFile + '.tmp';
   writeFileSync(tmpFile, JSON.stringify(state));
   renameSync(tmpFile, stateFile);
-} catch { /* ignore */ }
+} catch (e: any) {
+  console.error("Failed to save atomic cycle state:", e);
+}
 
 console.log(parts.join(' '));

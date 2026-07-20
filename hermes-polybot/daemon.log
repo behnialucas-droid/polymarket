@@ -4,240 +4,37 @@
 
 Hermes Polybot SMC Daemon starting. Running cycle every 5 minutes...
 
-[2026-07-20T12:32:21.511Z] Starting autonomous cycle...
-observed:8 scored:8 copied:0 pnl:5 resolved:0
+[2026-07-20T21:05:54.248Z] Starting autonomous cycle...
+[paperTrading] updateOpenPnl failed for market 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43: Market not found: 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43
+[paperTrading] updateOpenPnl failed for market 0x178c6d259fc808dc6d2b60e59168fc6fa878d8c81e7a05cbecc35898db62a902: Market not found: 0x178c6d259fc808dc6d2b60e59168fc6fa878d8c81e7a05cbecc35898db62a902
+[paperTrading] updateOpenPnl failed for market 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
+[paperTrading] updateOpenPnl failed for market 0xdea5d8e21d189a7c76bf9f35acef8abb536ed7cda88a1984d0dfacf524f25cd5: Market not found: 0xdea5d8e21d189a7c76bf9f35acef8abb536ed7cda88a1984d0dfacf524f25cd5
+[paperTrading] updateOpenPnl failed for market 0xec29527c8d3f5d959562a56b684b712ea2b5bb217f9358b2e423ac8b425f3e03: Market not found: 0xec29527c8d3f5d959562a56b684b712ea2b5bb217f9358b2e423ac8b425f3e03
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] updateOpenPnl failed for market 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43: Market not found: 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] updateOpenPnl failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43: Market not found: 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43
+[paperTrading] reviewOutcomes failed for market 0x178c6d259fc808dc6d2b60e59168fc6fa878d8c81e7a05cbecc35898db62a902: Market not found: 0x178c6d259fc808dc6d2b60e59168fc6fa878d8c81e7a05cbecc35898db62a902
+[paperTrading] reviewOutcomes failed for market 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
+[paperTrading] reviewOutcomes failed for market 0xdea5d8e21d189a7c76bf9f35acef8abb536ed7cda88a1984d0dfacf524f25cd5: Market not found: 0xdea5d8e21d189a7c76bf9f35acef8abb536ed7cda88a1984d0dfacf524f25cd5
+[paperTrading] reviewOutcomes failed for market 0xec29527c8d3f5d959562a56b684b712ea2b5bb217f9358b2e423ac8b425f3e03: Market not found: 0xec29527c8d3f5d959562a56b684b712ea2b5bb217f9358b2e423ac8b425f3e03
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43: Market not found: 0x381803b9dd2ce69b81c54bd8ec55022a6746fb5c29e449846cf038e069aa3f43
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[paperTrading] reviewOutcomes failed for market 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa: Market not found: 0xfb634c77e114a4518a14449b5e7813319f507b96ca4ab83555ef77f8d88f78aa
+[TG] Sending message (length: 283)
+observed:158 scored:159 copied:3 pnl:19 resolved:0 telegram:sent
 Sleeping for 5 minutes...
 
-[2026-07-20T12:39:40.393Z] Starting autonomous cycle...
-observed:6 scored:6 copied:0 pnl:5 resolved:0
-Sleeping for 5 minutes...
-
-[2026-07-20T12:47:04.573Z] Starting autonomous cycle...
-observed:5 scored:5 copied:0 pnl:5 resolved:0
-Sleeping for 5 minutes...
-
-[2026-07-20T12:55:02.589Z] Starting autonomous cycle...
-observed:15 scored:15 copied:0 pnl:5 resolved:0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:02:00.970Z] Starting autonomous cycle...
-[TG] Sending message (length: 282)
-Not in a git repository or git not available, skipping cloud backup.
-observed:1 scored:1 copied:0 pnl:5 resolved:0 telegram:sent
-Sleeping for 5 minutes...
-
-[2026-07-20T13:09:12.678Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:16:17.725Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:22:53.339Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:29:35.740Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:36:17.134Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:43:07.696Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:49:48.703Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T13:56:34.832Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T14:03:27.727Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T14:10:07.740Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T14:19:41.065Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
-
-[2026-07-20T14:26:24.173Z] Starting autonomous cycle...
-file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88
-    if (!m) throw new AdapterError(`Market not found: ${marketId}`);
-                  ^
-
-AdapterError: Market not found: 0x09405169faa602f44064fc7408ccd22005166d9528c58674edbce750b71d126f
-    at PolymarketAdapter.fetchMarket (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:88:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
-    at async PolymarketAdapter.fetchPrice (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/adapters/polymarket.ts:113:15)
-    at async updateOpenPnl (file:///home/nima/Documents/claude.app/hermes-polybot/src/lib/engine/paperTrading.ts:40:19)
-    at async file:///home/nima/Documents/claude.app/hermes-polybot/scripts/loop-once.ts:34:20 {
-  status: undefined,
-  body: undefined
-}
-
-Node.js v22.14.0
-Sleeping for 5 minutes...
+[2026-07-20T21:14:49.369Z] Starting autonomous cycle...
