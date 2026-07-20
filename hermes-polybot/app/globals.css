@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0b0e14;
+  --panel: #12161f;
+  --border: #1f2633;
+  --text: #e6e9f0;
+  --muted: #8b93a5;
+  --accent: #4f8cff;
+  --green: #34c98e;
+  --red: #f26d6d;
+  --amber: #e8b64f;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.table-base { width: 100%; font-size: 0.8rem; }
+.table-base th { text-align: left; color: var(--muted); font-weight: 500; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.table-base td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.table-base tr:last-child td { border-bottom: none; }
+
+.pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+.pill-track, .pill-paper_copy, .pill-good { background: rgb(52 201 142 / 0.15); color: var(--green); }
+.pill-watch, .pill-watchlist { background: rgb(232 182 79 / 0.15); color: var(--amber); }
+.pill-ignore, .pill-skip, .pill-bad { background: rgb(242 109 109 / 0.15); color: var(--red); }
+.pill-open { background: rgb(79 140 255 / 0.15); color: var(--accent); }
+.pill-resolved, .pill-closed { background: rgb(139 147 165 / 0.15); color: var(--muted); }

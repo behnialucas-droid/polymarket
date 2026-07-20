@@ -1,0 +1,37 @@
+{
+  "name": "hermes-polybot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hermes-operated Polymarket copy-trading research system. PAPER TRADING ONLY - no keys, no signing, no real trades.",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "loop": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/loop.ts",
+    "build": "next build",
+    "start": "next start",
+    "db:migrate": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/migrate.ts",
+    "scan:leaderboard": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/scan-leaderboard.ts",
+    "scan:wallets": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/scan-wallets.ts",
+    "monitor:trades": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/monitor-trades.ts",
+    "score:trades": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/score-trades.ts",
+    "paper:update-pnl": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/paper-update-pnl.ts",
+    "review:outcomes": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/review-outcomes.ts",
+    "update:rules": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/update-rules.ts",
+    "report:daily": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/report-daily.ts",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test 'tests/*.test.ts'"
+  },
+  "dependencies": {
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "recharts": "3.9.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.10.13",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3"
+  }
+}
