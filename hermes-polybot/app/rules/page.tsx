@@ -2,8 +2,8 @@ import { rulesData } from '../../src/lib/queries.ts';
 
 export const dynamic = 'force-dynamic';
 
-export default function Rules() {
-  const { active, history, changes } = rulesData();
+export default async function Rules() {
+  const { active, history, changes } = await rulesData();
   const rules = active ? JSON.parse(active.rulesJson) : null;
   return (
     <main className="space-y-4">

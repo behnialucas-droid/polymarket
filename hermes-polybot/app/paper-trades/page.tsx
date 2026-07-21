@@ -3,8 +3,8 @@ import { paperTrades } from '../../src/lib/queries.ts';
 
 export const dynamic = 'force-dynamic';
 
-export default function PaperTrades() {
-  const rows = paperTrades();
+export default async function PaperTrades() {
+  const rows = await paperTrades();
   return (
     <main className="panel overflow-x-auto p-4">
       <h2 className="mb-2 text-sm font-medium">Paper Trades ({rows.length}) — simulated only, $5–$20 each</h2>

@@ -12,8 +12,8 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
   );
 }
 
-export default function Overview() {
-  const o = overview();
+export default async function Overview() {
+  const o = await overview();
   const winRate = o.resolved.length ? o.resolved.filter((r: any) => r.realizedPnl > 0).length / o.resolved.length : null;
   return (
     <main className="space-y-4">

@@ -2,8 +2,8 @@ import { tradeSignals } from '../../src/lib/queries.ts';
 
 export const dynamic = 'force-dynamic';
 
-export default function Signals() {
-  const rows = tradeSignals();
+export default async function Signals() {
+  const rows = await tradeSignals();
   return (
     <main className="panel overflow-x-auto p-4">
       <h2 className="mb-2 text-sm font-medium">Trade Signals ({rows.length} recent)</h2>

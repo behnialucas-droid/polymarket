@@ -16,9 +16,9 @@ const NAV = [
   ['/reports', 'Reports'],
 ] as const;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   let demo = false;
-  try { demo = hasDemoData(); } catch { /* db may not exist yet */ }
+  try { demo = await hasDemoData(); } catch { /* db may not exist yet */ }
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen" suppressHydrationWarning>

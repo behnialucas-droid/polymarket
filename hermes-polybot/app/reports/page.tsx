@@ -2,8 +2,8 @@ import { reportsData } from '../../src/lib/queries.ts';
 
 export const dynamic = 'force-dynamic';
 
-export default function Reports() {
-  const rows = reportsData();
+export default async function Reports() {
+  const rows = await reportsData();
   return (
     <main className="space-y-4">
       {rows.length === 0 && <div className="panel p-6 text-sm text-[color:var(--muted)]">No reports yet — run npm run report:daily.</div>}

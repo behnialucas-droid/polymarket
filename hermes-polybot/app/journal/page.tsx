@@ -2,8 +2,8 @@ import { decisionJournal } from '../../src/lib/queries.ts';
 
 export const dynamic = 'force-dynamic';
 
-export default function Journal() {
-  const rows = decisionJournal();
+export default async function Journal() {
+  const rows = await decisionJournal();
   return (
     <main className="panel overflow-x-auto p-4">
       <h2 className="mb-2 text-sm font-medium">Decision Journal ({rows.length} recent)</h2>

@@ -1,29 +1,29 @@
 /** Paper trading engine + hourly PnL + outcome review + benchmarks.
  * SIMULATION ONLY. No orders, no funds, no keys. */
-import type { DatabaseSync } from 'node:sqlite';
+import type postgres from 'postgres';
 import type { DataAdapter } from '../adapters/types.ts';
 import type { TradeDecision } from './tradeScoring.ts';
 import type { WalletTrade, MarketData } from '../adapters/types.ts';
 
-export function createPaperTrade(
-  db: DatabaseSync,
+export async function createPaperTrade(
+  db: postgres.Sql,
   decisionJournalId: number,
   trade: WalletTrade,
   market: MarketData,
   decision: TradeDecision,
   isDemo: boolean,
-): number {
+): Promise<number> {
   if (decision.decision !== 'paper_copy') throw new Error('createPaperTrade requires a paper_copy decision');
   const size = decision.simulatedPositionSize ?? 5;
   if (size < 5 || size > 20) throw new Error(`simulated position size ${size} outside $5-$20 bounds`);
   const entryPrice = trade.outcome?.toUpperCase() === 'NO' ? (market.noPrice ?? 0.5) : (market.yesPrice ?? 0.5);
-  const res = db
-    .prepare(
-      `INSERT INTO PaperTrade (decisionJournalId, walletAddress, marketId, outcome, side, entryPrice, currentPrice, simulatedPositionSize, reason, isDemo)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    )
-    .run(decisionJournalId, trade.walletAddress, trade.marketId, trade.outcome ?? 'YES', trade.side, entryPrice, entryPrice, size, decision.reasons.join('; '), isDemo ? 1 : 0);
-  return Number(res.lastInsertRowid);
+  
+  const res = await db`
+    INSERT INTO "PaperTrade" ("decisionJournalId", "walletAddress", "marketId", "outcome", "side", "entryPrice", "currentPrice", "simulatedPositionSize", "reason", "isDemo")
+    VALUES (${decisionJournalId}, ${trade.walletAddress}, ${trade.marketId}, ${trade.outcome ?? 'YES'}, ${trade.side}, ${entryPrice}, ${entryPrice}, ${size}, ${decision.reasons.join('; ')}, ${isDemo ? 1 : 0})
+    RETURNING "id"
+  `;
+  return Number(res[0].id);
 }
 
 /** shares = size/entry; pnl = shares * (price - entry) */
@@ -34,14 +34,14 @@ export function computePnl(entryPrice: number, currentPrice: number, size: numbe
 }
 
 /** Hourly PnL update for open trades. Fails loud on adapter error. */
-export async function updateOpenPnl(db: DatabaseSync, adapter: DataAdapter): Promise<number> {
-  const open = db.prepare("SELECT id, marketId, outcome, entryPrice, simulatedPositionSize FROM PaperTrade WHERE status = 'open'").all() as any[];
+export async function updateOpenPnl(db: postgres.Sql, adapter: DataAdapter): Promise<number> {
+  const open = await db`SELECT "id", "marketId", "outcome", "entryPrice", "simulatedPositionSize" FROM "PaperTrade" WHERE "status" = 'open'`;
   for (const t of open) {
     try {
       const price = await adapter.fetchPrice(t.marketId, t.outcome);
       const pnl = computePnl(t.entryPrice, price, t.simulatedPositionSize);
-      db.prepare('UPDATE PaperTrade SET currentPrice = ?, unrealizedPnl = ? WHERE id = ?').run(price, pnl, t.id);
-      db.prepare('INSERT INTO PnlSnapshot (paperTradeId, price, pnl) VALUES (?,?,?)').run(t.id, price, pnl);
+      await db`UPDATE "PaperTrade" SET "currentPrice" = ${price}, "unrealizedPnl" = ${pnl} WHERE "id" = ${t.id}`;
+      await db`INSERT INTO "PnlSnapshot" ("paperTradeId", "price", "pnl") VALUES (${t.id}, ${price}, ${pnl})`;
     } catch (e: any) {
       console.warn(`[paperTrading] updateOpenPnl failed for market ${t.marketId}:`, e.message);
     }
@@ -50,8 +50,8 @@ export async function updateOpenPnl(db: DatabaseSync, adapter: DataAdapter): Pro
 }
 
 /** Resolve trades whose markets resolved; write OutcomeReview rows. */
-export async function reviewOutcomes(db: DatabaseSync, adapter: DataAdapter): Promise<number> {
-  const open = db.prepare("SELECT * FROM PaperTrade WHERE status = 'open'").all() as any[];
+export async function reviewOutcomes(db: postgres.Sql, adapter: DataAdapter): Promise<number> {
+  const open = await db`SELECT * FROM "PaperTrade" WHERE "status" = 'open'`;
   let resolvedCount = 0;
   for (const t of open) {
     try {
@@ -60,16 +60,21 @@ export async function reviewOutcomes(db: DatabaseSync, adapter: DataAdapter): Pr
       const won = m.resolvedOutcome?.toUpperCase() === String(t.outcome).toUpperCase();
       const finalPrice = won ? 1 : 0;
       const pnl = computePnl(t.entryPrice, finalPrice, t.simulatedPositionSize);
-      db.prepare("UPDATE PaperTrade SET status = 'resolved', currentPrice = ?, realizedPnl = ?, resolvedAt = datetime('now') WHERE id = ?").run(finalPrice, pnl, t.id);
-      const snaps = db.prepare('SELECT price FROM PnlSnapshot WHERE paperTradeId = ? ORDER BY collectedAt LIMIT 24').all(t.id) as any[];
+      
+      await db`UPDATE "PaperTrade" SET "status" = 'resolved', "currentPrice" = ${finalPrice}, "realizedPnl" = ${pnl}, "resolvedAt" = CURRENT_TIMESTAMP WHERE "id" = ${t.id}`;
+      
+      const snaps = await db`SELECT "price" FROM "PnlSnapshot" WHERE "paperTradeId" = ${t.id} ORDER BY "collectedAt" LIMIT 24`;
+      
       const lessons: string[] = [];
       if (pnl > 0) lessons.push('copy decision paid off');
       else lessons.push('copy decision lost; review entry conditions');
-      db.prepare(
-        `INSERT INTO OutcomeReview (decisionJournalId, paperTradeId, reviewTime, priceAfter1h, priceAfter6h, priceAfter24h, finalOutcome, simulatedPnl, wasDecisionGood, lessonsJson)
-         VALUES (?,?,datetime('now'),?,?,?,?,?,?,?)`,
-      ).run(t.decisionJournalId, t.id, snaps[0]?.price ?? null, snaps[5]?.price ?? null, snaps[23]?.price ?? null, m.resolvedOutcome ?? null, pnl, pnl > 0 ? 1 : 0, JSON.stringify(lessons));
-      db.prepare('UPDATE DecisionJournal SET reviewOutcome = ? WHERE id = ?').run(pnl > 0 ? 'good' : 'bad', t.decisionJournalId);
+      
+      await db`
+        INSERT INTO "OutcomeReview" ("decisionJournalId", "paperTradeId", "reviewTime", "priceAfter1h", "priceAfter6h", "priceAfter24h", "finalOutcome", "simulatedPnl", "wasDecisionGood", "lessonsJson")
+        VALUES (${t.decisionJournalId}, ${t.id}, CURRENT_TIMESTAMP, ${snaps[0]?.price ?? null}, ${snaps[5]?.price ?? null}, ${snaps[23]?.price ?? null}, ${m.resolvedOutcome ?? null}, ${pnl}, ${pnl > 0 ? 1 : 0}, ${JSON.stringify(lessons)})
+      `;
+      
+      await db`UPDATE "DecisionJournal" SET "reviewOutcome" = ${pnl > 0 ? 'good' : 'bad'} WHERE "id" = ${t.decisionJournalId}`;
       resolvedCount++;
     } catch (e: any) {
       console.warn(`[paperTrading] reviewOutcomes failed for market ${t.marketId}:`, e.message);
@@ -88,21 +93,19 @@ export interface BenchmarkResult {
 }
 
 /** Compare bot-filtered vs blind copy vs watchlist vs skipped, using resolved data. */
-export function computeBenchmarks(db: DatabaseSync): BenchmarkResult {
-  const resolved = db.prepare("SELECT realizedPnl FROM PaperTrade WHERE status = 'resolved' AND realizedPnl IS NOT NULL").all() as any[];
-  const botPnl = resolved.reduce((a, r) => a + r.realizedPnl, 0);
-  const botWins = resolved.filter((r) => r.realizedPnl > 0).length;
+export async function computeBenchmarks(db: postgres.Sql): Promise<BenchmarkResult> {
+  const resolved = await db`SELECT "realizedPnl" FROM "PaperTrade" WHERE "status" = 'resolved' AND "realizedPnl" IS NOT NULL`;
+  const botPnl = resolved.reduce((a, r) => a + Number(r.realizedPnl), 0);
+  const botWins = resolved.filter((r) => Number(r.realizedPnl) > 0).length;
 
   // hypothetical: what every observed trade would have returned at $10 flat if its market resolved
-  const hyp = db
-    .prepare(
-      `SELECT dj.decision, ot.walletEntryPrice AS entry, ot.outcome, ms.rawMarketJson
-       FROM DecisionJournal dj
-       JOIN ObservedTrade ot ON ot.id = dj.observedTradeId
-       LEFT JOIN MarketSnapshot ms ON ms.marketId = dj.marketId
-       WHERE ms.id = (SELECT MAX(id) FROM MarketSnapshot WHERE marketId = dj.marketId)`,
-    )
-    .all() as any[];
+  const hyp = await db`
+       SELECT dj."decision", ot."walletEntryPrice" AS entry, ot."outcome", ms."rawMarketJson"
+       FROM "DecisionJournal" dj
+       JOIN "ObservedTrade" ot ON ot."id" = dj."observedTradeId"
+       LEFT JOIN "MarketSnapshot" ms ON ms."marketId" = dj."marketId"
+       WHERE ms."id" = (SELECT MAX("id") FROM "MarketSnapshot" WHERE "marketId" = dj."marketId")
+    `;
 
   let blindPnl = 0, blindTrades = 0, blindWins = 0;
   let watchPnl = 0, watchTrades = 0, skipPnl = 0, skipTrades = 0;
@@ -111,9 +114,9 @@ export function computeBenchmarks(db: DatabaseSync): BenchmarkResult {
     let raw: any = null;
     try { raw = h.rawMarketJson ? JSON.parse(h.rawMarketJson) : null; } catch {}
     const resolvedOutcome = raw?.resolvedOutcome;
-    if (!resolvedOutcome || !h.entry || h.entry <= 0) continue;
+    if (!resolvedOutcome || !h.entry || Number(h.entry) <= 0) continue;
     const won = String(resolvedOutcome).toUpperCase() === String(h.outcome).toUpperCase();
-    const pnl = computePnl(h.entry, won ? 1 : 0, 10);
+    const pnl = computePnl(Number(h.entry), won ? 1 : 0, 10);
     blindPnl += pnl; blindTrades++; if (won) blindWins++;
     if (h.decision === 'watchlist') { watchPnl += pnl; watchTrades++; if (won) missedWinners++; }
     if (h.decision === 'skip') { skipPnl += pnl; skipTrades++; if (won) missedWinners++; else avoidedLosers++; }

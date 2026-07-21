@@ -3,8 +3,8 @@ import { walletRankings } from '../../src/lib/queries.ts';
 
 export const dynamic = 'force-dynamic';
 
-export default function Wallets() {
-  const rows = walletRankings();
+export default async function Wallets() {
+  const rows = await walletRankings();
   return (
     <main className="panel overflow-x-auto p-4">
       <h2 className="mb-2 text-sm font-medium">Wallet Rankings ({rows.length} scanned)</h2>

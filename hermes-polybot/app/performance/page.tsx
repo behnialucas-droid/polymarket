@@ -5,8 +5,8 @@ import PnlChart from '../PnlChart.tsx';
 
 export const dynamic = 'force-dynamic';
 
-export default function Performance() {
-  const p = perf();
+export default async function Performance() {
+  const p = await perf();
   const b = computeBenchmarks(getDb());
   return (
     <main className="space-y-4">

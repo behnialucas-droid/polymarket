@@ -1,37 +1,35 @@
-import { DatabaseSync } from 'node:sqlite';
-import { readFileSync, readdirSync, mkdirSync } from 'node:fs';
+import postgres from 'postgres';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const DB_PATH = process.env.DATABASE_PATH ?? join(ROOT, 'data', 'polybot.db');
 
-let db: DatabaseSync | null = null;
+const dbUrl = process.env.DATABASE_URL || '';
+let sql: postgres.Sql | null = null;
 
-export function getDb(): DatabaseSync {
-  if (db) return db;
-  if (DB_PATH !== ':memory:') mkdirSync(dirname(DB_PATH), { recursive: true });
-  db = new DatabaseSync(DB_PATH);
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 10000;
-    PRAGMA synchronous = NORMAL;
-  `);
-  migrate(db);
-  return db;
+export function getDb(): postgres.Sql {
+  if (sql) return sql;
+  
+  if (!dbUrl) {
+    console.warn('DATABASE_URL is not set. Database connection will fail.');
+  }
+
+  sql = postgres(dbUrl, {
+    max: 10,
+    idle_timeout: 20,
+    connect_timeout: 10,
+  });
+  
+  return sql;
 }
 
-export function openMemoryDb(): DatabaseSync {
-  const d = new DatabaseSync(':memory:');
-  d.exec('PRAGMA foreign_keys = ON;');
-  migrate(d);
-  return d;
-}
-
-export function migrate(d: DatabaseSync): void {
+export async function migrate(d: postgres.Sql): Promise<void> {
   const dir = join(ROOT, 'db', 'migrations');
   for (const f of readdirSync(dir).sort()) {
-    if (f.endsWith('.sql')) d.exec(readFileSync(join(dir, f), 'utf8'));
+    if (f.endsWith('.sql')) {
+      const query = readFileSync(join(dir, f), 'utf8');
+      await d.unsafe(query);
+    }
   }
 }

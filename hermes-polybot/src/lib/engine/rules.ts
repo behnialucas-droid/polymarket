@@ -1,5 +1,5 @@
 /** Versioned rule sets + automatic rule changes with full audit trail. */
-import type { DatabaseSync } from 'node:sqlite';
+import type postgres from 'postgres';
 
 export interface Rules {
   minLiquidity: number;
@@ -34,13 +34,13 @@ export const DEFAULT_RULES: Rules = {
   weights: { roi: 0.2, consistency: 0.15, copyability: 0.15, categoryFit: 0.1, entryTiming: 0.1, spread: 0.1, liquidity: 0.1, thesis: 0.1 },
 };
 
-export function getActiveRules(db: DatabaseSync): { rules: Rules; version: number; id: number } {
-  const row = db.prepare('SELECT id, version, rulesJson FROM RuleSet WHERE active = 1 ORDER BY version DESC LIMIT 1').get() as any;
-  if (!row) {
-    const res = db.prepare('INSERT INTO RuleSet (version, active, rulesJson) VALUES (1, 1, ?)').run(JSON.stringify(DEFAULT_RULES));
-    return { rules: { ...DEFAULT_RULES }, version: 1, id: Number(res.lastInsertRowid) };
+export async function getActiveRules(db: postgres.Sql): Promise<{ rules: Rules; version: number; id: number }> {
+  const row = await db`SELECT "id", "version", "rulesJson" FROM "RuleSet" WHERE "active" = 1 ORDER BY "version" DESC LIMIT 1`;
+  if (row.length === 0) {
+    const res = await db`INSERT INTO "RuleSet" ("version", "active", "rulesJson") VALUES (1, 1, ${JSON.stringify(DEFAULT_RULES)}) RETURNING "id"`;
+    return { rules: { ...DEFAULT_RULES }, version: 1, id: Number(res[0].id) };
   }
-  return { rules: JSON.parse(row.rulesJson), version: row.version, id: row.id };
+  return { rules: JSON.parse(row[0].rulesJson), version: row[0].version, id: row[0].id };
 }
 
 export interface RuleChangeInput {
@@ -51,36 +51,32 @@ export interface RuleChangeInput {
 }
 
 /** Apply a rule change: new versioned RuleSet + RuleChange audit row. */
-export function applyRuleChange(db: DatabaseSync, change: RuleChangeInput): { newVersion: number } {
-  const cur = getActiveRules(db);
+export async function applyRuleChange(db: postgres.Sql, change: RuleChangeInput): Promise<{ newVersion: number }> {
+  const cur = await getActiveRules(db);
   const next: Rules = JSON.parse(JSON.stringify(cur.rules));
   change.mutate(next);
   const before = JSON.stringify(cur.rules);
   const after = JSON.stringify(next);
   if (before === after) return { newVersion: cur.version };
   const newVersion = cur.version + 1;
-  db.prepare('UPDATE RuleSet SET active = 0 WHERE active = 1').run();
-  const res = db.prepare('INSERT INTO RuleSet (version, active, rulesJson) VALUES (?, 1, ?)').run(newVersion, after);
-  db.prepare(
-    'INSERT INTO RuleChange (oldRuleSetId, newRuleSetId, changedBy, reason, evidenceSummary, beforeJson, afterJson, expectedImprovement) VALUES (?,?,?,?,?,?,?,?)',
-  ).run(cur.id, Number(res.lastInsertRowid), 'hermes', change.reason, change.evidenceSummary, before, after, change.expectedImprovement);
+  await db`UPDATE "RuleSet" SET "active" = 0 WHERE "active" = 1`;
+  const res = await db`INSERT INTO "RuleSet" ("version", "active", "rulesJson") VALUES (${newVersion}, 1, ${after}) RETURNING "id"`;
+  await db`INSERT INTO "RuleChange" ("oldRuleSetId", "newRuleSetId", "changedBy", "reason", "evidenceSummary", "beforeJson", "afterJson", "expectedImprovement") 
+           VALUES (${cur.id}, ${Number(res[0].id)}, 'hermes', ${change.reason}, ${change.evidenceSummary}, ${before}, ${after}, ${change.expectedImprovement})`;
   return { newVersion };
 }
 
 /** Self-improvement: inspect outcome reviews + paper results, adjust thresholds.
  * Returns list of changes made (each already logged with evidence). */
-export function autoUpdateRules(db: DatabaseSync): string[] {
+export async function autoUpdateRules(db: postgres.Sql): Promise<string[]> {
   const changes: string[] = [];
-  const { rules } = getActiveRules(db);
+  const { rules } = await getActiveRules(db);
 
   // Evidence: performance of resolved paper trades bucketed by conditions at decision time
-  const rows = db
-    .prepare(
-      `SELECT pt.realizedPnl AS pnl, dj.spreadScore, dj.liquidityScore, dj.entryTimingScore
-       FROM PaperTrade pt JOIN DecisionJournal dj ON dj.id = pt.decisionJournalId
-       WHERE pt.status = 'resolved' AND pt.realizedPnl IS NOT NULL`,
-    )
-    .all() as any[];
+  const rows = await db`SELECT pt."realizedPnl" AS pnl, dj."spreadScore", dj."liquidityScore", dj."entryTimingScore"
+       FROM "PaperTrade" pt JOIN "DecisionJournal" dj ON dj."id" = pt."decisionJournalId"
+       WHERE pt."status" = 'resolved' AND pt."realizedPnl" IS NOT NULL`;
+       
   if (rows.length < 5) return changes; // not enough evidence
 
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -90,7 +86,7 @@ export function autoUpdateRules(db: DatabaseSync): string[] {
 
   if (wideSpread.length >= 3 && avg(wideSpread.map((r) => r.pnl)) < 0) {
     const oldV = rules.maxSpread;
-    applyRuleChange(db, {
+    await applyRuleChange(db, {
       reason: 'Spread-heavy trades underperform; tighten max spread',
       evidenceSummary: `${wideSpread.length} resolved trades with low spread score averaged ${avg(wideSpread.map((r) => r.pnl)).toFixed(2)} PnL`,
       expectedImprovement: 'Fewer spread losses',
@@ -100,7 +96,7 @@ export function autoUpdateRules(db: DatabaseSync): string[] {
   }
   if (lowLiq.length >= 3 && avg(lowLiq.map((r) => r.pnl)) < 0) {
     const oldV = rules.minLiquidity;
-    applyRuleChange(db, {
+    await applyRuleChange(db, {
       reason: 'Low-liquidity trades perform poorly; raise minimum liquidity',
       evidenceSummary: `${lowLiq.length} resolved trades with low liquidity score averaged ${avg(lowLiq.map((r) => r.pnl)).toFixed(2)} PnL`,
       expectedImprovement: 'Avoid unfillable copies',
@@ -110,7 +106,7 @@ export function autoUpdateRules(db: DatabaseSync): string[] {
   }
   if (late.length >= 3 && avg(late.map((r) => r.pnl)) < 0) {
     const oldV = rules.maxPriceMoveSinceEntry;
-    applyRuleChange(db, {
+    await applyRuleChange(db, {
       reason: 'Late entries lose; reduce allowed price movement since wallet entry',
       evidenceSummary: `${late.length} resolved late-entry trades averaged ${avg(late.map((r) => r.pnl)).toFixed(2)} PnL`,
       expectedImprovement: 'Avoid chasing moved prices',
@@ -120,15 +116,12 @@ export function autoUpdateRules(db: DatabaseSync): string[] {
   }
 
   // Downgrade wallets with poor recent paper performance
-  const badWallets = db
-    .prepare(
-      `SELECT walletAddress, SUM(realizedPnl) AS total, COUNT(*) AS n
-       FROM PaperTrade WHERE status = 'resolved' GROUP BY walletAddress HAVING n >= 3 AND total < -10`,
-    )
-    .all() as any[];
+  const badWallets = await db`SELECT "walletAddress", SUM("realizedPnl") AS total, COUNT(*) AS n
+       FROM "PaperTrade" WHERE "status" = 'resolved' GROUP BY "walletAddress" HAVING COUNT(*) >= 3 AND SUM("realizedPnl") < -10`;
+       
   for (const w of badWallets) {
-    db.prepare("UPDATE WalletProfile SET status = 'ignore', statusReason = ?, updatedAt = datetime('now') WHERE address = ? AND status != 'ignore'")
-      .run(`Auto-downgrade: ${w.n} resolved paper trades totaling ${Number(w.total).toFixed(2)} PnL`, w.walletAddress);
+    const reason = `Auto-downgrade: ${w.n} resolved paper trades totaling ${Number(w.total).toFixed(2)} PnL`;
+    await db`UPDATE "WalletProfile" SET "status" = 'ignore', "statusReason" = ${reason}, "updatedAt" = CURRENT_TIMESTAMP WHERE "address" = ${w.walletAddress} AND "status" != 'ignore'`;
     changes.push(`wallet ${w.walletAddress} downgraded to ignore`);
   }
   return changes;

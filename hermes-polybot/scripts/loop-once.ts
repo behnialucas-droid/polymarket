@@ -12,18 +12,22 @@ const day = now.toISOString().slice(0, 10);
 const hour = now.getUTCHours();
 const parts: string[] = [];
 
-import { writeFileSync, renameSync, readFileSync } from 'node:fs';
-import path from 'node:path';
-const stateFile = path.resolve(process.cwd(), 'data', '.cycle-state.json');
+// Load state from Postgres SystemState table instead of local filesystem
 let state = { lastLeaderboardDay: '', lastRulesHour: -1, lastTelegramHour: -1 };
-try { state = { ...state, ...JSON.parse(readFileSync(stateFile, 'utf8')) }; } catch { /* first run */ }
+try {
+  const stateRows = await db`SELECT "valueJson" FROM "SystemState" WHERE "keyName" = 'cycle_state'`;
+  if (stateRows.length > 0) {
+    state = { ...state, ...JSON.parse(stateRows[0].valueJson) };
+  }
+} catch (e: any) {
+  console.error("Failed to load SystemState:", e);
+}
 
 // Once per day: leaderboard + wallet profiles
 if (day !== state.lastLeaderboardDay) {
   const n = await runLeaderboardScan(db, adapter, Number(process.env.LEADERBOARD_LIMIT ?? 500));
   parts.push(`leaderboard:${n}`);
-  const top = db.prepare('SELECT address FROM WalletProfile ORDER BY sourceRank LIMIT ?')
-    .all(Number(process.env.WALLET_SCAN_LIMIT ?? 50)) as any[];
+  const top = await db`SELECT "address" FROM "WalletProfile" ORDER BY "sourceRank" ASC NULLS LAST LIMIT ${Number(process.env.WALLET_SCAN_LIMIT ?? 50)}`;
   for (const w of top) await profileWallet(db, adapter, w.address);
   parts.push(`profiled:${top.length}`);
   state.lastLeaderboardDay = day;
@@ -38,7 +42,7 @@ parts.push(`observed:${observed}`, `scored:${scored}`, `copied:${copied}`, `pnl:
 
 // Once per hour: rule updates & Telegram report
 if (hour !== state.lastRulesHour) {
-  const changes = autoUpdateRules(db);
+  const changes = await autoUpdateRules(db);
   if (changes.length) parts.push(`rules:${changes.length} changed`);
   state.lastRulesHour = hour;
 }
@@ -53,13 +57,15 @@ if (hour !== state.lastTelegramHour) {
   state.lastTelegramHour = hour;
 }
 
-// Atomic save state (SMC-style robustness to prevent corruption)
+// Save state to Postgres
 try {
-  const tmpFile = stateFile + '.tmp';
-  writeFileSync(tmpFile, JSON.stringify(state));
-  renameSync(tmpFile, stateFile);
+  await db`
+    INSERT INTO "SystemState" ("keyName", "valueJson")
+    VALUES ('cycle_state', ${JSON.stringify(state)})
+    ON CONFLICT("keyName") DO UPDATE SET "valueJson" = EXCLUDED."valueJson", "updatedAt" = CURRENT_TIMESTAMP
+  `;
 } catch (e: any) {
-  console.error("Failed to save atomic cycle state:", e);
+  console.error("Failed to save cycle state to Postgres:", e);
 }
 
 console.log(parts.join(' '));

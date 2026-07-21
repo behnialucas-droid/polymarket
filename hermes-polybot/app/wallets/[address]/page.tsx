@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function WalletDetail({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
-  const { profile: p, recentTrades, paperPerf } = walletProfile(address);
+  const { profile: p, recentTrades, paperPerf } = await walletProfile(address);
   if (!p) return <main className="panel p-6">Wallet not found.</main>;
   const cats = JSON.parse(p.categoryStrengthsJson ?? '{}');
   return (

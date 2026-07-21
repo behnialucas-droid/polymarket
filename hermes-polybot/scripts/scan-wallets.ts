@@ -4,7 +4,7 @@ import { getAdapter, profileWallet } from './pipeline.ts';
 const db = getDb();
 const adapter = getAdapter();
 const limit = Number(process.env.WALLET_SCAN_LIMIT ?? 50);
-const wallets = db.prepare('SELECT address FROM WalletProfile ORDER BY sourceRank LIMIT ?').all(limit) as any[];
+const wallets = await db`SELECT "address" FROM "WalletProfile" ORDER BY "sourceRank" ASC NULLS LAST LIMIT ${limit}`;
 let ok = 0;
 for (const w of wallets) {
   try {
