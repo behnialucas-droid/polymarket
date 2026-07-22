@@ -23,7 +23,7 @@ jobs:
 
       - name: Run Autonomous Cycle
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://postgres.yywcdqgbilwbuifnbidz:0g30C4hNlkAPtt9Y@aws-0-eu-west-1.pooler.supabase.com:5432/postgres' }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://postgres.yywcdqgbilwbuifnbidz:0g30C4hNlkAPtt9Y@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true' }}
           DIRECT_URL: ${{ secrets.DIRECT_URL || 'postgresql://postgres.yywcdqgbilwbuifnbidz:0g30C4hNlkAPtt9Y@aws-0-eu-west-1.pooler.supabase.com:5432/postgres' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN || '7968301266:AAEgrLkq01Q8k-OdCuDRu16pz0iVRafoAFw' }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || '5708853617' }}
