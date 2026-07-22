@@ -28,20 +28,29 @@ export async function runLeaderboardScan(db: postgres.Sql, adapter: DataAdapter,
 
 export async function profileWallet(db: postgres.Sql, adapter: DataAdapter, address: string): Promise<void> {
   const trades = await adapter.fetchWalletTrades(address, since30d());
-  const items: TradeWithMarket[] = [];
+  const uniqueMarketIds = Array.from(new Set(trades.map((t) => t.marketId).filter(Boolean)));
   const marketCache = new Map<string, any>();
+
+  const BATCH_SIZE = 20;
+  for (let i = 0; i < uniqueMarketIds.length; i += BATCH_SIZE) {
+    const batch = uniqueMarketIds.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (mId) => {
+        try {
+          const m = await adapter.fetchMarket(mId);
+          marketCache.set(mId, m);
+        } catch {
+          // Market archived or missing
+        }
+      })
+    );
+  }
+
+  const items: TradeWithMarket[] = [];
   for (const t of trades) {
     if (!t.marketId) continue;
-    let m = marketCache.get(t.marketId);
-    if (!m) { 
-      try {
-        m = await adapter.fetchMarket(t.marketId); 
-        marketCache.set(t.marketId, m); 
-      } catch (e: any) {
-        // Market may be archived/removed, skip this trade for scoring
-        continue;
-      }
-    }
+    const m = marketCache.get(t.marketId);
+    if (!m) continue;
     let pnlPerDollar: number | undefined;
     if (m.resolved && m.resolvedOutcome && t.price > 0) {
       const won = String(m.resolvedOutcome).toUpperCase() === String(t.outcome).toUpperCase();

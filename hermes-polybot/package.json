@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "db:migrate": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/migrate.ts",
+    "seed:500": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/seed-500-wallets.ts",
     "scan:leaderboard": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/scan-leaderboard.ts",
     "scan:wallets": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/scan-wallets.ts",
     "monitor:trades": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/monitor-trades.ts",

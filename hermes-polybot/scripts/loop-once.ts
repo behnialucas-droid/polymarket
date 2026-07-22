@@ -48,11 +48,12 @@ if (hour !== state.lastRulesHour) {
 }
 
 if (hour !== state.lastTelegramHour) {
-  // Only send if it's not the very first boot to prevent spam
-  if (state.lastTelegramHour !== -1) {
+  try {
     const { runHourlyReport } = await import('./report-telegram.ts');
     await runHourlyReport();
     parts.push('telegram:sent');
+  } catch (e: any) {
+    console.error("Hourly Telegram report error:", e?.message || e);
   }
   state.lastTelegramHour = hour;
 }

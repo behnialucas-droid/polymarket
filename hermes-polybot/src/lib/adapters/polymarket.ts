@@ -11,25 +11,46 @@ const CLOB = 'https://clob.polymarket.com';
 
 async function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
-async function getJson(url: string, retries = 3): Promise<any> {
+let lastRequestTime = 0;
+
+async function getJson(url: string, retries = 4): Promise<any> {
   let lastErr: Error | undefined;
+
+  // Anti-suspension throttling: minimum 200ms delay between API calls
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  if (elapsed < 200) {
+    await sleep(200 - elapsed);
+  }
+  lastRequestTime = Date.now();
+
   for (let attempt = 0; attempt < retries; attempt++) {
-    if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1)); // 1s, 2s, 4s backoff
+    if (attempt > 0) await sleep(1500 * 2 ** (attempt - 1)); // 1.5s, 3s, 6s, 12s backoff
+
     let res: Response;
     try {
-      res = await fetch(url, { method: 'GET' });
+      res = await fetch(url, { 
+        method: 'GET',
+        headers: { 'User-Agent': 'HermesPolybot/1.0 (Supabase-Powered Paper Trader)' }
+      });
     } catch (e: any) {
       lastErr = new AdapterError(`Network error fetching ${url}: ${e?.message ?? e}`);
-      continue; // retry on network error
+      continue;
     }
+
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      // Don't retry 400/404 — they are hard errors (bad input, not found)
+      if (res.status === 429) {
+        // Rate limited — cool down for 5 seconds
+        console.warn(`[Rate Limit] HTTP 429 received for ${url}. Cooling down for 5s...`);
+        await sleep(5000);
+        continue;
+      }
       if (res.status === 400 || res.status === 404) {
         throw new AdapterError(`HTTP ${res.status} from ${url}`, res.status, body.slice(0, 500));
       }
       lastErr = new AdapterError(`HTTP ${res.status} from ${url}`, res.status, body.slice(0, 500));
-      continue; // retry on 5xx or other transient errors
+      continue;
     }
     return res.json();
   }

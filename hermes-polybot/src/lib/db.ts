@@ -1,15 +1,42 @@
 import postgres from 'postgres';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-const dbUrl = process.env.DATABASE_URL || '';
+function loadEnvFile() {
+  if (process.env.DATABASE_URL) return;
+  const envPath = join(ROOT, '.env');
+  if (existsSync(envPath)) {
+    const lines = readFileSync(envPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        let val = trimmed.slice(eqIdx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
+
+loadEnvFile();
+
 let sql: postgres.Sql | null = null;
 
 export function getDb(): postgres.Sql {
   if (sql) return sql;
+  
+  loadEnvFile();
+  const dbUrl = process.env.DATABASE_URL || '';
   
   if (!dbUrl) {
     console.warn('DATABASE_URL is not set. Database connection will fail.');

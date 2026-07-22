@@ -21,9 +21,10 @@ export async function POST() {
   lastRunAt = new Date().toLocaleTimeString();
 
   const root = path.resolve(process.cwd());
+  const args = ['--experimental-strip-types', '--disable-warning=ExperimentalWarning', path.join(root, 'scripts', 'loop-once.ts')];
   const child = spawn(
-    'node',
-    ['--experimental-strip-types', '--disable-warning=ExperimentalWarning', path.join(root, 'scripts', 'loop-once.ts')],
+    process.execPath,
+    args,
     { cwd: root, env: { ...process.env }, stdio: 'pipe', detached: false }
   );
 
