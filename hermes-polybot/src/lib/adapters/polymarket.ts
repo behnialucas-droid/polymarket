@@ -13,7 +13,7 @@ async function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms));
 
 let lastRequestTime = 0;
 
-async function getJson(url: string, retries = 4): Promise<any> {
+async function getJson(url: string, retries = 6): Promise<any> {
   let lastErr: Error | undefined;
 
   // Anti-suspension throttling: minimum 200ms delay between API calls
@@ -25,7 +25,7 @@ async function getJson(url: string, retries = 4): Promise<any> {
   lastRequestTime = Date.now();
 
   for (let attempt = 0; attempt < retries; attempt++) {
-    if (attempt > 0) await sleep(1500 * 2 ** (attempt - 1)); // 1.5s, 3s, 6s, 12s backoff
+    if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1)); // 1s, 2s, 4s, 8s, 16s backoff
 
     let res: Response;
     try {
@@ -41,51 +41,49 @@ async function getJson(url: string, retries = 4): Promise<any> {
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       if (res.status === 429) {
-        // Rate limited — cool down for 5 seconds
         console.warn(`[Rate Limit] HTTP 429 received for ${url}. Cooling down for 5s...`);
         await sleep(5000);
         continue;
       }
-      if (res.status === 400 || res.status === 404) {
-        throw new AdapterError(`HTTP ${res.status} from ${url}`, res.status, body.slice(0, 500));
-      }
-      lastErr = new AdapterError(`HTTP ${res.status} from ${url}`, res.status, body.slice(0, 500));
+      lastErr = new AdapterError(`HTTP ${res.status} ${res.statusText} fetching ${url}: ${body.slice(0, 200)}`, res.status, body);
       continue;
     }
-    return res.json();
+
+    try {
+      return await res.json();
+    } catch (e: any) {
+      lastErr = new AdapterError(`Failed to parse JSON response from ${url}: ${e?.message ?? e}`);
+    }
   }
-  throw lastErr ?? new AdapterError(`Failed after ${retries} attempts: ${url}`);
+
+  throw lastErr ?? new AdapterError(`Failed to fetch ${url} after ${retries} retries`);
 }
 
 export class PolymarketAdapter implements DataAdapter {
   readonly source = 'polymarket';
   readonly isDemo = false;
 
-  async fetchLeaderboard(limit: number): Promise<LeaderboardEntry[]> {
-    const out: LeaderboardEntry[] = [];
-    // data-api leaderboard uses v1/leaderboard, ranked by PNL
-    for (let offset = 0; out.length < limit; offset += 100) {
-      const page = await getJson(`${DATA}/v1/leaderboard?timePeriod=month&orderBy=PNL&category=overall&limit=100&offset=${offset}`);
-      const rows: any[] = Array.isArray(page) ? page : (page?.leaderboard ?? []);
-      if (!rows.length) break;
-      for (const r of rows) {
-        out.push({
-          address: r.proxyWallet ?? r.address ?? r.wallet,
-          label: r.userName ?? r.name ?? undefined,
-          rank: out.length + 1,
-          pnl: Number(r.pnl ?? r.amount ?? 0),
-          volume: Number(r.vol ?? r.volume ?? 0),
-        });
-        if (out.length >= limit) break;
-      }
-    }
-    return out;
+  async fetchLeaderboard(limit = 500, windowDays = 30): Promise<LeaderboardEntry[]> {
+    const data = await getJson(`${DATA}/leaderboard?limit=${limit}&window=${windowDays}d`);
+    const rows = Array.isArray(data) ? data : data?.data ?? data?.leaderboard ?? [];
+    return rows.map((r: any, idx: number) => ({
+      address: String(r.user ?? r.address ?? r.proxyWallet ?? ''),
+      rank: Number(r.rank ?? idx + 1),
+      pnl: Number(r.pnl ?? r.profit ?? 0),
+      volume: Number(r.volume ?? 0),
+      label: r.username ?? r.name ?? r.pseudonym ?? r.user,
+    })).filter((e: LeaderboardEntry) => Boolean(e.address));
   }
 
   async fetchWalletTrades(address: string, sinceIso: string): Promise<WalletTrade[]> {
     const sinceTs = Math.floor(new Date(sinceIso).getTime() / 1000);
-    // Use the activity feed filtered by TRADE type
-    const rows: any[] = await getJson(`${DATA}/activity?user=${address}&type=TRADE&limit=500&start=${sinceTs}`);
+    let rows: any[] = [];
+    try {
+      rows = await getJson(`${DATA}/activity?user=${address}&type=TRADE&limit=500&start=${sinceTs}`);
+    } catch {
+      // Fallback to smaller page size if limit=500 fails
+      rows = await getJson(`${DATA}/activity?user=${address}&type=TRADE&limit=100&start=${sinceTs}`);
+    }
     return (rows ?? [])
       .filter((t) => Number(t.timestamp) >= sinceTs)
       .map((t) => ({
