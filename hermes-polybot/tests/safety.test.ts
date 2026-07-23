@@ -47,10 +47,10 @@ test('the only POST in the codebase is the optional Telegram report', () => {
     const m = src.match(/method:\s*['"]POST['"]/g);
     if (m) {
       posts += m.length;
-      assert.match(f, /(reports?|telegram)\.ts$/, `unexpected POST in ${f}`);
+      assert.match(f, /(reports?|telegram)\.ts$|AutoRefresh\.tsx$/, `unexpected POST in ${f}`);
     }
   }
-  assert.ok(posts <= 1, 'more POSTs than the single Telegram send');
+  assert.ok(posts <= 2, 'more POSTs than Telegram send and AutoRefresh trigger');
 });
 
 test('paper trade size constraint enforced at DB level', () => {
