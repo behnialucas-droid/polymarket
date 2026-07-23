@@ -63,16 +63,28 @@ export class PolymarketAdapter implements DataAdapter {
   readonly source = 'polymarket';
   readonly isDemo = false;
 
-  async fetchLeaderboard(limit = 500, windowDays = 30): Promise<LeaderboardEntry[]> {
-    const data = await getJson(`${DATA}/leaderboard?limit=${limit}&window=${windowDays}d`);
-    const rows = Array.isArray(data) ? data : data?.data ?? data?.leaderboard ?? [];
-    return rows.map((r: any, idx: number) => ({
-      address: String(r.user ?? r.address ?? r.proxyWallet ?? ''),
-      rank: Number(r.rank ?? idx + 1),
-      pnl: Number(r.pnl ?? r.profit ?? 0),
-      volume: Number(r.volume ?? 0),
-      label: r.username ?? r.name ?? r.pseudonym ?? r.user,
-    })).filter((e: LeaderboardEntry) => Boolean(e.address));
+  async fetchLeaderboard(limit = 500): Promise<LeaderboardEntry[]> {
+    const out: LeaderboardEntry[] = [];
+    for (let offset = 0; out.length < limit; offset += 100) {
+      try {
+        const page = await getJson(`${DATA}/v1/leaderboard?timePeriod=month&orderBy=PNL&category=overall&limit=100&offset=${offset}`);
+        const rows: any[] = Array.isArray(page) ? page : (page?.leaderboard ?? []);
+        if (!rows.length) break;
+        for (const r of rows) {
+          out.push({
+            address: String(r.proxyWallet ?? r.address ?? r.wallet ?? r.user ?? ''),
+            label: r.userName ?? r.name ?? r.pseudonym ?? undefined,
+            rank: out.length + 1,
+            pnl: Number(r.pnl ?? r.amount ?? r.profit ?? 0),
+            volume: Number(r.vol ?? r.volume ?? 0),
+          });
+          if (out.length >= limit) break;
+        }
+      } catch {
+        break;
+      }
+    }
+    return out.filter((e) => Boolean(e.address));
   }
 
   async fetchWalletTrades(address: string, sinceIso: string): Promise<WalletTrade[]> {

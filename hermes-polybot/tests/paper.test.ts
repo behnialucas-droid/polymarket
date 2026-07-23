@@ -80,4 +80,11 @@ test('benchmark comparison: bot vs blind copy vs skip buckets', async () => {
   const b = await computeBenchmarks(db);
   assert.ok(b.skipped.trades >= 1);
   assert.ok(b.missedWinners >= 1);
+
+  // Cleanup test fixture rows
+  await db`DELETE FROM "OutcomeReview" WHERE "decisionJournalId" IN (SELECT "id" FROM "DecisionJournal" WHERE "walletAddress" IN ('0xbad', '0xw'))`;
+  await db`DELETE FROM "PnlSnapshot" WHERE "paperTradeId" IN (SELECT "id" FROM "PaperTrade" WHERE "walletAddress" IN ('0xbad', '0xw'))`;
+  await db`DELETE FROM "PaperTrade" WHERE "walletAddress" IN ('0xbad', '0xw')`;
+  await db`DELETE FROM "DecisionJournal" WHERE "walletAddress" IN ('0xbad', '0xw')`;
+  await db`DELETE FROM "ObservedTrade" WHERE "walletAddress" IN ('0xbad', '0xw')`;
 });
