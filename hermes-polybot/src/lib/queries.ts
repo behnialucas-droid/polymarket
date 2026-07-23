@@ -1,6 +1,29 @@
 /** Read-only dashboard queries. Server-side only. */
 import { getDb } from './db.ts';
 
+function cleanValue(v: any): any {
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'bigint') return Number(v);
+  if (Array.isArray(v)) return v.map(cleanValue);
+  if (v && typeof v === 'object' && v.constructor === Object) {
+    const res: any = {};
+    for (const k of Object.keys(v)) res[k] = cleanValue(v[k]);
+    return res;
+  }
+  return v;
+}
+
+function cleanRows(rows: any): any {
+  if (!rows) return rows;
+  if (Array.isArray(rows)) {
+    return rows.map(r => cleanValue(typeof r === 'object' && r !== null ? { ...r } : r));
+  }
+  if (typeof rows === 'object') {
+    return cleanValue({ ...rows });
+  }
+  return rows;
+}
+
 export async function hasDemoData(): Promise<boolean> {
   const sql = getDb();
   const res = await sql`SELECT 1 AS v FROM "WalletProfile" WHERE "isDemo" = 1 LIMIT 1`;
@@ -16,28 +39,29 @@ export async function overview() {
     sql`SELECT COUNT(*) as v FROM "WalletProfile" WHERE "status"='track'`,
     sql`SELECT COUNT(*) as v FROM "DecisionJournal" WHERE "decision"='paper_copy' AND DATE("createdAt")=CURRENT_DATE`,
     sql`SELECT "date", "sentToTelegram" FROM "DailyReport" ORDER BY "date" DESC LIMIT 1`,
-    sql`SELECT "reason", "createdAt" FROM "RuleChange" ORDER BY "id" DESC LIMIT 5`,
+    sql`SELECT "reason", "createdAt"::text AS "createdAt" FROM "RuleChange" ORDER BY "id" DESC LIMIT 5`,
     sql`SELECT SUBSTR("collectedAt"::text, 1, 13) as hour, ROUND(SUM("pnl")::numeric, 2) as pnl FROM "PnlSnapshot"
         WHERE "id" IN (SELECT MAX("id") FROM "PnlSnapshot" GROUP BY "paperTradeId", SUBSTR("collectedAt"::text, 1, 13))
         GROUP BY hour ORDER BY hour`
   ]);
 
   return {
-    totalPnl: totalPnlRes[0]?.v ?? 0,
-    resolved: resolvedRes,
-    openPositions: openPositionsRes[0]?.v ?? 0,
-    trackedWallets: trackedWalletsRes[0]?.v ?? 0,
-    copyToday: copyTodayRes[0]?.v ?? 0,
-    lastReport: lastReportRes[0] || null,
-    ruleChanges: ruleChangesRes,
-    pnlSeries: pnlSeriesRes,
+    totalPnl: Number(totalPnlRes[0]?.v ?? 0),
+    resolved: cleanRows(resolvedRes),
+    openPositions: Number(openPositionsRes[0]?.v ?? 0),
+    trackedWallets: Number(trackedWalletsRes[0]?.v ?? 0),
+    copyToday: Number(copyTodayRes[0]?.v ?? 0),
+    lastReport: cleanRows(lastReportRes[0] || null),
+    ruleChanges: cleanRows(ruleChangesRes),
+    pnlSeries: cleanRows(pnlSeriesRes),
   };
 }
 
 export async function walletRankings() {
   const sql = getDb();
-  return await sql`SELECT "address", "label", "sourceRank", "status", "statusReason", "roi30d", "consistencyScore", "copyabilityScore",
+  const res = await sql`SELECT "address", "label", "sourceRank", "status", "statusReason", "roi30d", "consistencyScore", "copyabilityScore",
             "oneHitWonderPenalty", "globalScore", "bestCategory" FROM "WalletProfile" ORDER BY COALESCE("globalScore", -1) DESC, "sourceRank"`;
+  return cleanRows(res);
 }
 
 export async function walletProfile(address: string) {
@@ -48,34 +72,37 @@ export async function walletProfile(address: string) {
     sql`SELECT COUNT(*) as n, ROUND(SUM(COALESCE("realizedPnl", "unrealizedPnl", 0))::numeric, 2) as pnl FROM "PaperTrade" WHERE "walletAddress" = ${address}`
   ]);
   return {
-    profile: profile[0] || null,
-    recentTrades,
-    paperPerf: paperPerf[0] || null,
+    profile: cleanRows(profile[0] || null),
+    recentTrades: cleanRows(recentTrades),
+    paperPerf: cleanRows(paperPerf[0] || null),
   };
 }
 
 export async function tradeSignals() {
   const sql = getDb();
-  return await sql`SELECT dj.*, ot."marketQuestion", ot."walletEntryPrice", ot."detectedPrice", ot."outcome", ot."timestamp",
+  const res = await sql`SELECT dj.*, ot."marketQuestion", ot."walletEntryPrice", ot."detectedPrice", ot."outcome", ot."timestamp",
             ms."spread", ms."liquidity", ms."timeToResolution"
             FROM "DecisionJournal" dj
             JOIN "ObservedTrade" ot ON ot."id" = dj."observedTradeId"
             LEFT JOIN "MarketSnapshot" ms ON ms."id" = (SELECT MAX("id") FROM "MarketSnapshot" WHERE "marketId" = dj."marketId")
             ORDER BY dj."id" DESC LIMIT 100`;
+  return cleanRows(res);
 }
 
 export async function paperTrades() {
   const sql = getDb();
-  return await sql`SELECT pt.*, dj."reasonsJson", ot."marketQuestion" FROM "PaperTrade" pt
+  const res = await sql`SELECT pt.*, dj."reasonsJson", ot."marketQuestion" FROM "PaperTrade" pt
             LEFT JOIN "DecisionJournal" dj ON dj."id" = pt."decisionJournalId"
             LEFT JOIN "ObservedTrade" ot ON ot."id" = dj."observedTradeId"
             ORDER BY pt."id" DESC LIMIT 100`;
+  return cleanRows(res);
 }
 
 export async function decisionJournal() {
   const sql = getDb();
-  return await sql`SELECT dj.*, ot."marketQuestion" FROM "DecisionJournal" dj
+  const res = await sql`SELECT dj.*, ot."marketQuestion" FROM "DecisionJournal" dj
             LEFT JOIN "ObservedTrade" ot ON ot."id" = dj."observedTradeId" ORDER BY dj."id" DESC LIMIT 200`;
+  return cleanRows(res);
 }
 
 export async function performance() {
@@ -91,8 +118,8 @@ export async function performance() {
   
   return {
     pnlSeries: overviewData.pnlSeries,
-    byCategory,
-    byWallet,
+    byCategory: cleanRows(byCategory),
+    byWallet: cleanRows(byWallet),
   };
 }
 
@@ -104,13 +131,14 @@ export async function rulesData() {
     sql`SELECT * FROM "RuleChange" ORDER BY "id" DESC LIMIT 50`
   ]);
   return {
-    active: active[0] || null,
-    history,
-    changes,
+    active: cleanRows(active[0] || null),
+    history: cleanRows(history),
+    changes: cleanRows(changes),
   };
 }
 
 export async function reportsData() {
   const sql = getDb();
-  return await sql`SELECT * FROM "DailyReport" ORDER BY "date" DESC LIMIT 30`;
+  const res = await sql`SELECT * FROM "DailyReport" ORDER BY "date" DESC LIMIT 30`;
+  return cleanRows(res);
 }
