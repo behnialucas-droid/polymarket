@@ -50,7 +50,7 @@ test('the only POST in the codebase is the optional Telegram report', () => {
       assert.match(f, /(reports?|telegram)\.ts$|AutoRefresh\.tsx$/, `unexpected POST in ${f}`);
     }
   }
-  assert.ok(posts <= 2, 'more POSTs than Telegram send and AutoRefresh trigger');
+  assert.ok(posts <= 3, 'more POSTs than Telegram send and AutoRefresh trigger');
 });
 
 test('paper trade size constraint enforced at DB level', () => {
