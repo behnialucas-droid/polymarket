@@ -104,8 +104,12 @@ export class PolymarketAdapter implements DataAdapter {
   }
 
   async fetchMarket(marketId: string): Promise<MarketData> {
-    const data = await getJson(`${GAMMA}/markets?condition_ids=${marketId}&closed=true&archived=true`);
-    const m = Array.isArray(data) ? data[0] : undefined;
+    let data = await getJson(`${GAMMA}/markets?condition_ids=${marketId}`);
+    let m = Array.isArray(data) ? data[0] : undefined;
+    if (!m) {
+      data = await getJson(`${GAMMA}/markets?condition_ids=${marketId}&closed=true&archived=true`);
+      m = Array.isArray(data) ? data[0] : undefined;
+    }
     if (!m) throw new AdapterError(`Market not found: ${marketId}`);
     const prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : [];
     const yes = Number(prices[0] ?? m.bestAsk ?? 0);
