@@ -57,8 +57,8 @@ export function scoreWallet(items: TradeWithMarket[]): WalletScore {
   }
   if (resolved.length > 0 && resolved.length < 5) oneHitWonderPenalty = clamp(oneHitWonderPenalty + 0.3); // few resolved trades = unreliable
 
-  // copyability: liquidity, spread, entry timing (can we realistically follow?)
-  const liqs = items.map((i) => i.market.liquidity ?? 0);
+  // copyability: liquidity (falling back to volume for closed/archived markets), spread, entry timing
+  const liqs = items.map((i) => (i.market.liquidity && i.market.liquidity > 0 ? i.market.liquidity : (i.market.volume ?? 10000)));
   const spreads = items.map((i) => i.market.spread ?? 0.1);
   const timings = items.map((i) => i.market.timeToResolutionHours ?? 0);
   const averageLiquidity = avg(liqs);
