@@ -104,7 +104,7 @@ export class PolymarketAdapter implements DataAdapter {
   }
 
   async fetchMarket(marketId: string): Promise<MarketData> {
-    const data = await getJson(`${GAMMA}/markets?condition_ids=${marketId}`);
+    const data = await getJson(`${GAMMA}/markets?condition_ids=${marketId}&closed=true&archived=true`);
     const m = Array.isArray(data) ? data[0] : undefined;
     if (!m) throw new AdapterError(`Market not found: ${marketId}`);
     const prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : [];
@@ -125,7 +125,15 @@ export class PolymarketAdapter implements DataAdapter {
       volume: Number(m.volumeNum ?? m.volume ?? 0),
       timeToResolutionHours: m.endDate ? (new Date(m.endDate).getTime() - Date.now()) / 3.6e6 : undefined,
       resolved: Boolean(m.closed),
-      resolvedOutcome: m.umaResolutionStatus === 'resolved' ? (m.outcome ?? undefined) : undefined,
+      resolvedOutcome: (() => {
+        const prices = m.outcomePrices ? (typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices) : [];
+        const outcomes = m.outcomes ? (typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : m.outcomes) : [];
+        if (m.closed && prices.length >= 2 && outcomes.length >= 2) {
+          if (Number(prices[0]) > 0.85) return String(outcomes[0]);
+          if (Number(prices[1]) > 0.85) return String(outcomes[1]);
+        }
+        return m.umaResolutionStatus === 'resolved' ? (m.outcome ?? undefined) : undefined;
+      })(),
       raw: m,
     };
   }

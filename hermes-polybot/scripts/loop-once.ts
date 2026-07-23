@@ -23,14 +23,25 @@ try {
   console.error("Failed to load SystemState:", e);
 }
 
-// Once per day: leaderboard + wallet profiles
+// Once per day: leaderboard scan
 if (day !== state.lastLeaderboardDay) {
   const n = await runLeaderboardScan(db, adapter, Number(process.env.LEADERBOARD_LIMIT ?? 500));
   parts.push(`leaderboard:${n}`);
-  const top = await db`SELECT "address" FROM "WalletProfile" ORDER BY "sourceRank" ASC NULLS LAST LIMIT ${Number(process.env.WALLET_SCAN_LIMIT ?? 50)}`;
-  for (const w of top) await profileWallet(db, adapter, w.address);
-  parts.push(`profiled:${top.length}`);
   state.lastLeaderboardDay = day;
+}
+
+// Every cycle: profile a batch of unprofiled/zero-trade wallets until all 500 are completed
+const unprofiled = await db`
+  SELECT "address" FROM "WalletProfile" 
+  WHERE "globalScore" IS NULL OR "tradeCount30d" = 0 OR "tradeCount30d" IS NULL
+  ORDER BY "sourceRank" ASC NULLS LAST 
+  LIMIT ${Number(process.env.WALLET_SCAN_LIMIT ?? 20)}
+`;
+if (unprofiled.length > 0) {
+  for (const w of unprofiled) {
+    try { await profileWallet(db, adapter, w.address); } catch {}
+  }
+  parts.push(`profiled:${unprofiled.length}`);
 }
 
 // Every cycle: monitor + score + pnl + outcomes
