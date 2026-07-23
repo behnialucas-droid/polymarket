@@ -16,10 +16,17 @@ export async function runLeaderboardScan(db: postgres.Sql, adapter: DataAdapter,
     INSERT INTO "LeaderboardScan" ("source", "scannedAt", "walletCount", "lookbackDays", "rawSummaryJson", "isDemo") 
     VALUES (${adapter.source}, CURRENT_TIMESTAMP, ${entries.length}, 30, ${JSON.stringify(entries.slice(0, 50))}, ${adapter.isDemo ? 1 : 0})
   `;
-  for (const e of entries) {
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+    const chunk = entries.slice(i, i + CHUNK_SIZE);
+    const rows = chunk.map(e => ({
+      address: e.address,
+      label: e.label ?? null,
+      sourceRank: e.rank,
+      isDemo: adapter.isDemo ? 1 : 0
+    }));
     await db`
-      INSERT INTO "WalletProfile" ("address", "label", "sourceRank", "isDemo") 
-      VALUES (${e.address}, ${e.label ?? null}, ${e.rank}, ${adapter.isDemo ? 1 : 0})
+      INSERT INTO "WalletProfile" ${db(rows, 'address', 'label', 'sourceRank', 'isDemo')}
       ON CONFLICT("address") DO UPDATE SET "label"=EXCLUDED."label", "sourceRank"=EXCLUDED."sourceRank", "updatedAt"=CURRENT_TIMESTAMP
     `;
   }
@@ -55,6 +62,11 @@ export async function profileWallet(db: postgres.Sql, adapter: DataAdapter, addr
     if (m.resolved && m.resolvedOutcome && t.price > 0) {
       const won = String(m.resolvedOutcome).toUpperCase() === String(t.outcome).toUpperCase();
       pnlPerDollar = ((won ? 1 : 0) - t.price) / t.price;
+    } else if (t.price > 0) {
+      const currentPrice = t.outcome?.toUpperCase() === 'NO' ? (m.noPrice ?? (m.yesPrice ? 1 - m.yesPrice : undefined)) : m.yesPrice;
+      if (currentPrice !== undefined && currentPrice > 0) {
+        pnlPerDollar = (currentPrice - t.price) / t.price;
+      }
     }
     items.push({ trade: t, market: m, pnlPerDollar });
   }
