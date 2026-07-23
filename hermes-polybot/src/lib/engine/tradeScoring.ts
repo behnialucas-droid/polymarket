@@ -93,7 +93,8 @@ export function scoreTrade(trade: WalletTrade, market: MarketData, wallet: Walle
     reasons.push(`wallet quality ${walletQualityScore}, liquidity ${liquidity}, spread ${spread.toFixed(3)}`);
   }
 
-  const confidence = clamp((copyScore - rules.minCopyScore) / (1 - rules.minCopyScore));
+  const denom = Math.max(0.01, 1 - rules.minCopyScore);
+  const confidence = clamp((copyScore - rules.minCopyScore) / denom);
   // $5–$20 sized by confidence
   const simulatedPositionSize = decision === 'paper_copy' ? Math.round((5 + confidence * 15) * 100) / 100 : null;
 

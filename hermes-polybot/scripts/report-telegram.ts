@@ -16,10 +16,10 @@ export async function runHourlyReport() {
   // 2-4. Copied, Ignored, Skipped (Overall)
   const decisions = await db`SELECT "decision", count(*) as c FROM "DecisionJournal" GROUP BY "decision"`;
   
-  let copied = 0, ignored = 0, skipped = 0;
+  let copied = 0, watched = 0, skipped = 0;
   for (const d of decisions) {
     if (d.decision === 'paper_copy') copied = Number(d.c);
-    if (d.decision === 'ignore') ignored = Number(d.c);
+    if (d.decision === 'watchlist') watched = Number(d.c);
     if (d.decision === 'skip') skipped = Number(d.c);
   }
   
@@ -44,9 +44,9 @@ export async function runHourlyReport() {
   
 <b>Wallet Pipeline (All-time)</b>
 • Wallets Scanned: ${totalScanned.c}
-• How many wallets is it watching?: ${trackedWallets.c}
+• Tracked Wallets: ${trackedWallets.c}
 • Trades Copied: ${copied}
-• Trades Ignored: ${ignored}
+• Trades Watched: ${watched}
 • Trades Skipped: ${skipped}
 
 <b>Portfolio Status</b>

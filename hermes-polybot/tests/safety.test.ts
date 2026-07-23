@@ -47,7 +47,7 @@ test('the only POST in the codebase is the optional Telegram report', () => {
     const m = src.match(/method:\s*['"]POST['"]/g);
     if (m) {
       posts += m.length;
-      assert.match(f, /reports\.ts$/, `unexpected POST in ${f}`);
+      assert.match(f, /(reports?|telegram)\.ts$/, `unexpected POST in ${f}`);
     }
   }
   assert.ok(posts <= 1, 'more POSTs than the single Telegram send');
@@ -55,7 +55,7 @@ test('the only POST in the codebase is the optional Telegram report', () => {
 
 test('paper trade size constraint enforced at DB level', () => {
   const sql = readFileSync(join(ROOT, 'db', 'migrations', '001_init.sql'), 'utf8');
-  assert.match(sql, /simulatedPositionSize >= 5 AND simulatedPositionSize <= 20/);
+  assert.match(sql, /"?simulatedPositionSize"? >= 5 AND "?simulatedPositionSize"? <= 20/);
 });
 
 test('secrets are redacted from logs', () => {

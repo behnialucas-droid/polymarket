@@ -129,8 +129,8 @@ export class PolymarketAdapter implements DataAdapter {
         const prices = m.outcomePrices ? (typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices) : [];
         const outcomes = m.outcomes ? (typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : m.outcomes) : [];
         if (m.closed && prices.length >= 2 && outcomes.length >= 2) {
-          if (Number(prices[0]) > 0.85) return String(outcomes[0]);
-          if (Number(prices[1]) > 0.85) return String(outcomes[1]);
+          const winIdx = prices.findIndex((p: any) => Number(p) > 0.85);
+          if (winIdx >= 0 && outcomes[winIdx]) return String(outcomes[winIdx]);
         }
         return m.umaResolutionStatus === 'resolved' ? (m.outcome ?? undefined) : undefined;
       })(),
