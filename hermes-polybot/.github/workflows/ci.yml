@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [ master, 'phase-*' ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  runtime-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.11'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+
+      - name: Install runtime dependencies
+        run: npm ci
+
+      - name: Assert single production dependency (postgres)
+        run: npm run depcheck
+
+      - name: Run unit tests and credential scan
+        run: npm test
+
+  dashboard-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.11'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dashboard dependencies
+        run: npm ci
+
+      - name: Build Next.js dashboard
+        run: npm run build
