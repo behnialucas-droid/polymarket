@@ -88,37 +88,99 @@ export async function profileWallet(db: postgres.Sql, adapter: DataAdapter, addr
 
 /** Detect trades from tracked wallets not yet observed; store them + market snapshots. */
 export async function monitorTrades(db: postgres.Sql, adapter: DataAdapter): Promise<number> {
-  const tracked = await db`SELECT "address" FROM "WalletProfile" WHERE "status" = 'track'`;
+  const { createHash } = await import('node:crypto');
+  const scanLimit = Number(process.env.WALLET_SCAN_LIMIT ?? 20);
+  const tracked = await db`
+    SELECT "address" FROM "WalletProfile"
+    WHERE "memoryStatus" IN ('copy','watch') OR "status" IN ('track','watch','copy')
+    ORDER BY "lastScannedAt" ASC NULLS FIRST
+    LIMIT ${scanLimit}
+  `;
+  if (tracked.length === 0) return 0;
+
+
   let newCount = 0;
   for (const w of tracked) {
-    const trades = await adapter.fetchWalletTrades(w.address, since30d());
+    // 1. High-water mark per wallet (MAX timestamp for this wallet minus 15 min overlap)
+    const hwmRows = await db`
+      SELECT MAX("timestamp") AS "maxTs" FROM "ObservedTrade" WHERE "walletAddress" = ${w.address}
+    `;
+    let since: string;
+    const maxTs = hwmRows[0]?.maxTs;
+    if (maxTs) {
+      const maxMs = new Date(maxTs).getTime();
+      since = new Date(maxMs - 15 * 60_000).toISOString(); // 15-min overlap
+    } else {
+      since = since30d(); // fallback for newly-tracked wallet
+    }
+
+    let trades: any[];
+    try {
+      trades = await adapter.fetchWalletTrades(w.address, since);
+    } catch (e: any) {
+      console.warn(`[monitorTrades] fetchWalletTrades failed for ${w.address}:`, e?.message ?? e);
+      continue;
+    }
+
     for (const t of trades) {
       if (!t.marketId) continue;
-      const exists = await db`SELECT 1 FROM "ObservedTrade" WHERE "walletAddress"=${t.walletAddress} AND "marketId"=${t.marketId} AND "timestamp"=${t.timestamp}`;
-      if (exists.length > 0) continue;
-      
+
+      // Compute tradeHash: walletAddress|marketId|outcome|side|timestamp
+      const rawStr = `${t.walletAddress}|${t.marketId}|${t.outcome ?? ''}|${t.side ?? ''}|${t.timestamp}`;
+      const tradeHash = createHash('sha256').update(rawStr).digest('hex');
+
       let m: any;
       try {
         m = await adapter.fetchMarket(t.marketId);
-      } catch (e: any) {
-        continue;
+      } catch {
+        continue; // market archived or missing
       }
       const detectedPrice = t.outcome?.toUpperCase() === 'NO' ? m.noPrice : m.yesPrice;
-      
-      await db`
-        INSERT INTO "ObservedTrade" ("walletAddress", "marketId", "conditionId", "marketQuestion", "marketCategory", "outcome", "side", "walletEntryPrice", "detectedPrice", "size", "timestamp", "rawTradeJson", "isDemo")
-        VALUES (${t.walletAddress}, ${t.marketId}, ${t.conditionId ?? null}, ${t.marketQuestion ?? null}, ${t.marketCategory ?? null}, ${t.outcome ?? null}, ${t.side}, ${t.price}, ${detectedPrice ?? null}, ${t.size}, ${t.timestamp}, ${JSON.stringify(t.raw ?? null)}, ${adapter.isDemo ? 1 : 0})
+
+      // ON CONFLICT ("tradeHash") DO NOTHING eliminates the per-trade SELECT query
+      const inserted = await db`
+        INSERT INTO "ObservedTrade" (
+          "walletAddress", "marketId", "conditionId", "marketQuestion", "marketCategory",
+          "outcome", "side", "walletEntryPrice", "detectedPrice", "size", "timestamp",
+          "rawTradeJson", "isDemo", "tradeHash"
+        )
+        VALUES (
+          ${t.walletAddress}, ${t.marketId}, ${t.conditionId ?? null}, ${t.marketQuestion ?? null},
+          ${t.marketCategory ?? null}, ${t.outcome ?? null}, ${t.side}, ${t.price},
+          ${detectedPrice ?? null}, ${t.size}, ${t.timestamp}, ${JSON.stringify(t.raw ?? null)},
+          ${adapter.isDemo ? 1 : 0}, ${tradeHash}
+        )
+        ON CONFLICT ("tradeHash") DO NOTHING
+        RETURNING "id"
       `;
-      
-      await db`
-        INSERT INTO "MarketSnapshot" ("marketId", "conditionId", "question", "category", "yesPrice", "noPrice", "bestBid", "bestAsk", "spread", "liquidity", "volume", "timeToResolution", "collectedAt", "rawMarketJson", "isDemo")
-        VALUES (${m.marketId}, ${m.conditionId ?? null}, ${m.question ?? null}, ${m.category ?? null}, ${m.yesPrice ?? null}, ${m.noPrice ?? null}, ${m.bestBid ?? null}, ${m.bestAsk ?? null}, ${m.spread ?? null}, ${m.liquidity ?? null}, ${m.volume ?? null}, ${m.timeToResolutionHours ?? null}, CURRENT_TIMESTAMP, ${JSON.stringify({ ...m, raw: undefined, resolvedOutcome: m.resolvedOutcome })}, ${adapter.isDemo ? 1 : 0})
-      `;
-      newCount++;
+
+      if (inserted.length > 0) {
+        await db`
+          INSERT INTO "MarketSnapshot" (
+            "marketId", "conditionId", "question", "category", "yesPrice", "noPrice",
+            "bestBid", "bestAsk", "spread", "liquidity", "volume", "timeToResolution",
+            "collectedAt", "rawMarketJson", "isDemo"
+          )
+          VALUES (
+            ${m.marketId}, ${m.conditionId ?? null}, ${m.question ?? null}, ${m.category ?? null},
+            ${m.yesPrice ?? null}, ${m.noPrice ?? null}, ${m.bestBid ?? null}, ${m.bestAsk ?? null},
+            ${m.spread ?? null}, ${m.liquidity ?? null}, ${m.volume ?? null},
+            ${m.timeToResolutionHours ?? null}, CURRENT_TIMESTAMP,
+            ${JSON.stringify({ ...m, raw: undefined, resolvedOutcome: m.resolvedOutcome })},
+            ${adapter.isDemo ? 1 : 0}
+          )
+        `;
+        newCount++;
+      }
     }
+
+    // Touch lastScannedAt so LRU scan queue advances
+    await db`UPDATE "WalletProfile" SET "lastScannedAt" = CURRENT_TIMESTAMP WHERE "address" = ${w.address}`;
   }
   return newCount;
 }
+
+
 
 /** Score unscored observed trades; journal decisions; open paper trades for copies. */
 export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Promise<{ scored: number; copied: number }> {

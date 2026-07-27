@@ -36,18 +36,34 @@ export function computePnl(entryPrice: number, currentPrice: number, size: numbe
 /** Hourly PnL update for open trades. Fails loud on adapter error. */
 export async function updateOpenPnl(db: postgres.Sql, adapter: DataAdapter): Promise<number> {
   const open = await db`SELECT "id", "marketId", "outcome", "entryPrice", "simulatedPositionSize" FROM "PaperTrade" WHERE "status" = 'open'`;
+  if (open.length === 0) return 0;
+
+  // Cache in-flight price fetch promises by key (marketId + outcome)
+  // Ensures concurrent/duplicate callers share one in-flight request
+  const pricePromises = new Map<string, Promise<number>>();
+  const getPrice = (marketId: string, outcome: string): Promise<number> => {
+    const key = `${marketId}:${outcome}`;
+    if (!pricePromises.has(key)) {
+      pricePromises.set(key, adapter.fetchPrice(marketId, outcome));
+    }
+    return pricePromises.get(key)!;
+  };
+
+  let updatedCount = 0;
   for (const t of open) {
     try {
-      const price = await adapter.fetchPrice(t.marketId, t.outcome);
+      const price = await getPrice(t.marketId, t.outcome);
       const pnl = computePnl(t.entryPrice, price, t.simulatedPositionSize);
       await db`UPDATE "PaperTrade" SET "currentPrice" = ${price}, "unrealizedPnl" = ${pnl} WHERE "id" = ${t.id}`;
       await db`INSERT INTO "PnlSnapshot" ("paperTradeId", "price", "pnl") VALUES (${t.id}, ${price}, ${pnl})`;
+      updatedCount++;
     } catch (e: any) {
-      console.warn(`[paperTrading] updateOpenPnl failed for market ${t.marketId}:`, e.message);
+      console.warn(`[paperTrading] updateOpenPnl failed for market ${t.marketId}:`, e?.message ?? e);
     }
   }
-  return open.length;
+  return updatedCount;
 }
+
 
 /** Resolve trades whose markets resolved; write OutcomeReview rows. */
 export async function reviewOutcomes(db: postgres.Sql, adapter: DataAdapter): Promise<number> {

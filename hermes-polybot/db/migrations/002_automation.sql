@@ -102,8 +102,7 @@ WHERE "id" IN (
 
 -- Unique index for ON CONFLICT (tradeHash) DO NOTHING dedup going forward
 CREATE UNIQUE INDEX IF NOT EXISTS idx_observedtrade_tradehash
-  ON "ObservedTrade" ("tradeHash")
-  WHERE "tradeHash" IS NOT NULL;
+  ON "ObservedTrade" ("tradeHash");
 
 -- Index: per-wallet high-water mark query used by monitorTrades
 -- SELECT MAX(timestamp) FROM ObservedTrade WHERE walletAddress = $addr
