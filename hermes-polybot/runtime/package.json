@@ -1,0 +1,19 @@
+{
+  "name": "hermes-runtime",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "dependencies": {
+    "postgres": "^3.4.5"
+  },
+  "scripts": {
+    "cycle": "node --experimental-strip-types scripts/cycle.ts",
+    "report": "node --experimental-strip-types scripts/report-hourly.ts",
+    "rescan-chunk": "node --experimental-strip-types scripts/rescan-chunk.ts",
+    "migrate": "node --experimental-strip-types scripts/migrate.ts",
+    "test": "node --experimental-strip-types --test tests/secrets.test.ts tests/rateLimit.test.ts tests/classify.test.ts tests/memory.test.ts",
+    "depcheck": "node --experimental-strip-types scripts/assert-one-dep.ts"
+  }
+}
