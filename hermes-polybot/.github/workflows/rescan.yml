@@ -1,0 +1,62 @@
+name: rescan
+
+on:
+  workflow_dispatch:
+    inputs:
+      generation:
+        description: 'Generation number to run (integer)'
+        required: true
+        type: string
+      chunk_index:
+        description: 'Chunk index (default: 1)'
+        required: false
+        default: '1'
+        type: string
+
+defaults:
+  run:
+    working-directory: runtime
+
+permissions:
+  contents: write          # required to commit and push memory/ projection
+  actions: write           # required to dispatch next chunk
+
+concurrency:
+  group: hermes-rescan-${{ inputs.generation }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    env:
+      DATABASE_URL:            ${{ secrets.DATABASE_URL }}
+      DIRECT_URL:              ${{ secrets.DIRECT_URL }}
+      TELEGRAM_BOT_TOKEN:      ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:        ${{ secrets.TELEGRAM_CHAT_ID }}
+      WORKFLOW_DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+      RESCAN_GENERATION:       ${{ inputs.generation }}
+      RESCAN_CHUNK_INDEX:      ${{ inputs.chunk_index }}
+      RESCAN_CHUNK_SIZE:       ${{ vars.RESCAN_CHUNK_SIZE }}
+      RESCAN_MAX_CHUNKS:       ${{ vars.RESCAN_MAX_CHUNKS }}
+      PM_MIN_INTERVAL_MS:      ${{ vars.PM_MIN_INTERVAL_MS }}
+      PM_MAX_CONCURRENT:       ${{ vars.PM_MAX_CONCURRENT }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}   # PAT required for push to trigger downstream events
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.11'
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+
+      - name: Install runtime dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run rescan chunk
+        run: npm run rescan-chunk

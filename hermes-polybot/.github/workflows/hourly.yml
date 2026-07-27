@@ -1,17 +1,21 @@
-name: loop
+name: hourly
 
 on:
   schedule:
-    - cron: '17 * * * *'   # :17 — top-of-hour is the most contended minute
+    - cron: '17 * * * *'   # :17 UTC — top-of-hour is the most contended minute on GHA
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: runtime
+
 permissions:
-  contents: read           # this job must NEVER push
-  actions: write           # needed to dispatch rescan.yml when due
+  contents: read           # this job must NEVER push to git
+  actions: write           # required for self-dispatching rescan.yml when due
 
 concurrency:
   group: hermes-hourly
-  cancel-in-progress: false   # let a late run finish; RunLock handles overlap
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -28,12 +32,10 @@ jobs:
       RESCAN_INTERVAL_DAYS:    ${{ vars.RESCAN_INTERVAL_DAYS }}
       PM_MIN_INTERVAL_MS:      ${{ vars.PM_MIN_INTERVAL_MS }}
       PM_MAX_CONCURRENT:       ${{ vars.PM_MAX_CONCURRENT }}
-      MIN_HOURS_TO_RESOLUTION: ${{ vars.MIN_HOURS_TO_RESOLUTION }}
       LEADERBOARD_LIMIT:       ${{ vars.LEADERBOARD_LIMIT }}
       WALLET_SCAN_LIMIT:       ${{ vars.WALLET_SCAN_LIMIT }}
       REPORT_TZ:               ${{ vars.REPORT_TZ }}
       # NO `|| 'literal'` ANYWHERE. A missing secret must crash this job.
-      # Use `vars.X || 'default'` for non-secrets — vars are not secrets.
 
     steps:
       - uses: actions/checkout@v4
@@ -43,15 +45,19 @@ jobs:
         with:
           node-version: '22.11'
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: runtime/package-lock.json
 
-      - name: Install deps
+      - name: Install runtime dependencies
         run: npm ci --no-audit --no-fund
 
       - name: Run cycle
-        run: node --experimental-strip-types scripts/loop-once.ts
+        run: npm run cycle
 
-      - name: Assert the billing boundary
+      - name: Run hourly report and watchdog
+        if: always()        # Report ALWAYS sends, even when cycle failed
+        run: npm run report
+
+      - name: Assert billing boundary
         if: always()
         run: |
           echo "job elapsed: ${SECONDS}s"
