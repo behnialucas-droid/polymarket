@@ -7,23 +7,34 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function loadEnvFile() {
   if (process.env.DATABASE_URL) return;
-  const envPath = join(ROOT, '.env');
-  if (existsSync(envPath)) {
-    const lines = readFileSync(envPath, 'utf8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        let val = trimmed.slice(eqIdx + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1);
-        }
-        if (!process.env[key]) {
-          process.env[key] = val;
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const candidatePaths = [
+    join(process.cwd(), '.env'),
+    join(process.cwd(), '..', '.env'),
+    join(currentDir, '.env'),
+    join(currentDir, '..', '.env'),
+    join(currentDir, '..', '..', '.env'),
+    join(currentDir, '..', '..', '..', '.env'),
+  ];
+  for (const envPath of candidatePaths) {
+    if (existsSync(envPath)) {
+      const lines = readFileSync(envPath, 'utf8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx).trim();
+          let val = trimmed.slice(eqIdx + 1).trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (!process.env[key]) {
+            process.env[key] = val;
+          }
         }
       }
+      if (process.env.DATABASE_URL) return;
     }
   }
 }
