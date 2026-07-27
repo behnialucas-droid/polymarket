@@ -43,16 +43,17 @@ export function getDb(): postgres.Sql {
   }
 
   sql = postgres(dbUrl, {
-    max: 10,
-    idle_timeout: 15,
-    connect_timeout: 30,
-    max_lifetime: 60 * 30,
-    keep_alive: 10,
-    prepare: false, // Required for PgBouncer / Supabase pooler
+    max: 3,
+    idle_timeout: 10,
+    connect_timeout: 20,
+    max_lifetime: 60 * 20,
+    keep_alive: 5,
+    prepare: false,       // REQUIRED for PgBouncer transaction pooling
     ssl: 'require',
     onnotice: () => {},
+    onclose: () => { sql = null; },
   });
-  
+
   return sql;
 }
 

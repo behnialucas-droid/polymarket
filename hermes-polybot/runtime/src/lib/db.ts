@@ -34,25 +34,30 @@ let sql: postgres.Sql | null = null;
 
 export function getDb(): postgres.Sql {
   if (sql) return sql;
-  
+
   loadEnvFile();
   const dbUrl = process.env.DATABASE_URL || '';
-  
+
   if (!dbUrl) {
     console.warn('DATABASE_URL is not set. Database connection will fail.');
   }
 
   sql = postgres(dbUrl, {
-    max: 10,
-    idle_timeout: 15,
-    connect_timeout: 30,
-    max_lifetime: 60 * 30,
-    keep_alive: 10,
-    prepare: false, // Required for PgBouncer / Supabase pooler
+    // PgBouncer transaction-pool mode: keep max low to avoid exhausting the pool
+    // and avoid ECONNRESET from idle-connection reaping
+    max: 3,
+    idle_timeout: 10,     // Return idle connections to pool quickly
+    connect_timeout: 20,
+    max_lifetime: 60 * 20, // 20 min cap — PgBouncer recycles after 30 min
+    keep_alive: 5,        // TCP keepalive probes every 5s
+    prepare: false,       // REQUIRED for PgBouncer transaction pooling
     ssl: 'require',
     onnotice: () => {},
+    // When PgBouncer drops a connection, clear the singleton so next call
+    // creates a fresh pool rather than retrying on dead socket
+    onclose: () => { sql = null; },
   });
-  
+
   return sql;
 }
 
