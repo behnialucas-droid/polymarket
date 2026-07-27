@@ -1,0 +1,18 @@
+{
+  "completedAt": "2026-07-27T14:25:00.522Z",
+  "counts": {
+    "copy": 0,
+    "watch": 810,
+    "ignore": 0,
+    "total": 810
+  },
+  "degradedReason": null,
+  "failed": 0,
+  "failedAddresses": [],
+  "generation": 1,
+  "nextDueAt": "2026-08-26T14:25:00.522Z",
+  "profiled": 810,
+  "ruleSetVersion": "v1",
+  "status": "complete",
+  "windowDays": 30
+}
