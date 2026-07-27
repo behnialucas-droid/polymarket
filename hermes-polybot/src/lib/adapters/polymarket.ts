@@ -4,59 +4,23 @@
  * clob.polymarket.com       : prices/books (public, no auth)
  * NO order endpoints, NO auth, NO keys. Fails loud with real error. */
 import { AdapterError, type DataAdapter, type LeaderboardEntry, type MarketData, type WalletTrade } from './types.ts';
+import { getJson as _getJson } from './http.ts';
 
 const GAMMA = 'https://gamma-api.polymarket.com';
 const DATA = 'https://data-api.polymarket.com';
 const CLOB = 'https://clob.polymarket.com';
 
-async function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
-
-let lastRequestTime = 0;
-
-async function getJson(url: string, retries = 6): Promise<any> {
-  let lastErr: Error | undefined;
-
-  // Anti-suspension throttling: minimum 200ms delay between API calls
-  const now = Date.now();
-  const elapsed = now - lastRequestTime;
-  if (elapsed < 200) {
-    await sleep(200 - elapsed);
+/**
+ * Thin wrapper: converts http.ts errors into AdapterError for backward compat.
+ * The actual rate-limiting, retries, and timeouts live in http.ts + rateLimit.ts.
+ */
+async function getJson(url: string): Promise<unknown> {
+  try {
+    return await _getJson(url);
+  } catch (e: unknown) {
+    const msg = (e as Error)?.message ?? String(e);
+    throw new AdapterError(msg);
   }
-  lastRequestTime = Date.now();
-
-  for (let attempt = 0; attempt < retries; attempt++) {
-    if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1)); // 1s, 2s, 4s, 8s, 16s backoff
-
-    let res: Response;
-    try {
-      res = await fetch(url, { 
-        method: 'GET',
-        headers: { 'User-Agent': 'HermesPolybot/1.0 (Supabase-Powered Paper Trader)' }
-      });
-    } catch (e: any) {
-      lastErr = new AdapterError(`Network error fetching ${url}: ${e?.message ?? e}`);
-      continue;
-    }
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      if (res.status === 429) {
-        console.warn(`[Rate Limit] HTTP 429 received for ${url}. Cooling down for 5s...`);
-        await sleep(5000);
-        continue;
-      }
-      lastErr = new AdapterError(`HTTP ${res.status} ${res.statusText} fetching ${url}: ${body.slice(0, 200)}`, res.status, body);
-      continue;
-    }
-
-    try {
-      return await res.json();
-    } catch (e: any) {
-      lastErr = new AdapterError(`Failed to parse JSON response from ${url}: ${e?.message ?? e}`);
-    }
-  }
-
-  throw lastErr ?? new AdapterError(`Failed to fetch ${url} after ${retries} retries`);
 }
 
 export class PolymarketAdapter implements DataAdapter {
