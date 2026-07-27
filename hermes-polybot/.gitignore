@@ -2,4 +2,13 @@ node_modules/
 data/
 .next/
 .env
+.env.*
+!.env.example
 logs/
+*.log
+daemon.log
+portfolio-backup.json
+dist/
+build/
+coverage/
+.DS_Store
