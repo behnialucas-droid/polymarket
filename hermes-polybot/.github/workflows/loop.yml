@@ -1,33 +1,60 @@
-name: Autonomous Hermes Polybot Cloud Loop
+name: loop
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Every 5 minutes
-  workflow_dispatch: # Allow manual trigger
+    - cron: '17 * * * *'   # :17 — top-of-hour is the most contended minute
+  workflow_dispatch:
+
+permissions:
+  contents: read           # this job must NEVER push
+  actions: write           # needed to dispatch rescan.yml when due
+
+concurrency:
+  group: hermes-hourly
+  cancel-in-progress: false   # let a late run finish; RunLock handles overlap
 
 jobs:
-  run-cycle:
+  run:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DATABASE_URL:            ${{ secrets.DATABASE_URL }}
+      TELEGRAM_BOT_TOKEN:      ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:        ${{ secrets.TELEGRAM_CHAT_ID }}
+      WORKFLOW_DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+      CYCLE_ENABLED:           ${{ vars.CYCLE_ENABLED }}
+      RESCAN_ENABLED:          ${{ vars.RESCAN_ENABLED }}
+      RESCAN_INTERVAL_DAYS:    ${{ vars.RESCAN_INTERVAL_DAYS }}
+      PM_MIN_INTERVAL_MS:      ${{ vars.PM_MIN_INTERVAL_MS }}
+      PM_MAX_CONCURRENT:       ${{ vars.PM_MAX_CONCURRENT }}
+      MIN_HOURS_TO_RESOLUTION: ${{ vars.MIN_HOURS_TO_RESOLUTION }}
+      LEADERBOARD_LIMIT:       ${{ vars.LEADERBOARD_LIMIT }}
+      WALLET_SCAN_LIMIT:       ${{ vars.WALLET_SCAN_LIMIT }}
+      REPORT_TZ:               ${{ vars.REPORT_TZ }}
+      # NO `|| 'literal'` ANYWHERE. A missing secret must crash this job.
+      # Use `vars.X || 'default'` for non-secrets — vars are not secrets.
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.11'
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
 
-      - name: Run Autonomous Cycle
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://postgres.yywcdqgbilwbuifnbidz:0g30C4hNlkAPtt9Y@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true' }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL || 'postgresql://postgres.yywcdqgbilwbuifnbidz:0g30C4hNlkAPtt9Y@aws-0-eu-west-1.pooler.supabase.com:5432/postgres' }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN || '7968301266:AAEgrLkq01Q8k-OdCuDRu16pz0iVRafoAFw' }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || '5708853617' }}
-          DATA_SOURCE: live
-          LEADERBOARD_LIMIT: 500
-          WALLET_SCAN_LIMIT: 500
-        run: node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/loop-once.ts
+      - name: Run cycle
+        run: node --experimental-strip-types scripts/loop-once.ts
+
+      - name: Assert the billing boundary
+        if: always()
+        run: |
+          echo "job elapsed: ${SECONDS}s"
+          if [ "$SECONDS" -gt 55 ]; then
+            echo "::warning::job took ${SECONDS}s, approaching the 60s billing boundary"
+          fi
