@@ -55,21 +55,75 @@ export function getDb(): postgres.Sql {
 
   sql = postgres(dbUrl, {
     // PgBouncer transaction-pool mode: keep max low to avoid exhausting the pool
-    // and avoid ECONNRESET from idle-connection reaping
     max: 3,
-    idle_timeout: 10,     // Return idle connections to pool quickly
-    connect_timeout: 20,
-    max_lifetime: 60 * 20, // 20 min cap — PgBouncer recycles after 30 min
-    keep_alive: 5,        // TCP keepalive probes every 5s
-    prepare: false,       // REQUIRED for PgBouncer transaction pooling
+    idle_timeout: 20,           // Give connections more time before returning to pool
+    connect_timeout: 30,        // Increased from 20 — Supabase cold starts need more time
+    max_lifetime: 60 * 15,      // 15 min cap — conservative for PgBouncer recycling
+    keep_alive: 10,             // TCP keepalive probes every 10s — prevents ETIMEDOUT on idle
+    keep_alive_delay: 30,       // Start keepalive after 30s idle
+    prepare: false,             // REQUIRED for PgBouncer transaction pooling
     ssl: 'require',
     onnotice: () => {},
     // When PgBouncer drops a connection, clear the singleton so next call
-    // creates a fresh pool rather than retrying on dead socket
+    // creates a fresh pool rather than retrying on dead socket.
     onclose: () => { sql = null; },
   });
 
   return sql;
+}
+
+/**
+ * Reset the DB singleton — call this after catching a connection error
+ * so the next getDb() creates a fresh pool instead of reusing a dead one.
+ */
+export function resetDb(): void {
+  if (sql) {
+    try { sql.end({ timeout: 2 }).catch(() => {}); } catch { /* ignore */ }
+    sql = null;
+  }
+}
+
+/**
+ * Execute an async database operation with exponential back-off retry.
+ *
+ * Retries on transient TCP errors (ETIMEDOUT, ECONNRESET, ECONNREFUSED, EPIPE).
+ * On each retry the DB singleton is reset so a fresh connection is established.
+ *
+ * @param fn     The operation to retry (receives a fresh db handle each attempt)
+ * @param label  Name for logging
+ * @param maxAttempts  Default 3
+ */
+export async function withDbRetry<T>(
+  fn: (db: postgres.Sql) => Promise<T>,
+  label = 'db-op',
+  maxAttempts = 3,
+): Promise<T> {
+  const RETRYABLE = /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|Connection terminated|socket hang up/i;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const db = getDb();
+      return await fn(db);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const isRetryable = RETRYABLE.test(msg);
+      const isLast = attempt >= maxAttempts;
+
+      if (isRetryable && !isLast) {
+        const waitMs = 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s
+        console.warn(`[${label}] transient DB error (attempt ${attempt}/${maxAttempts}), retrying in ${waitMs}ms: ${msg.slice(0, 120)}`);
+        resetDb();
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+
+      // Not retryable, or last attempt — always reset pool on failure
+      if (isRetryable) resetDb();
+      throw e;
+    }
+  }
+  // Unreachable — TypeScript needs this
+  throw new Error(`${label}: all ${maxAttempts} attempts exhausted`);
 }
 
 export async function migrate(d: postgres.Sql): Promise<void> {

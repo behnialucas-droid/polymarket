@@ -1,0 +1,31 @@
+[Unit]
+Description=Hermes Polybot Dashboard (Next.js)
+Documentation=https://github.com/behnialucas-droid/smc-paper-trader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nima
+WorkingDirectory=/home/nima/Documents/claude.app/polymarket-repo/hermes-polybot/dashboard
+ExecStart=/usr/local/bin/npm run dev
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hermes-dashboard
+
+# Environment
+Environment=NODE_ENV=development
+EnvironmentFile=/home/nima/Documents/claude.app/polymarket-repo/hermes-polybot/dashboard/.env
+
+# Resource limits — dashboard is read-only, keep it lean
+MemoryMax=512M
+CPUQuota=50%
+
+# Allow graceful shutdown
+TimeoutStopSec=10
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

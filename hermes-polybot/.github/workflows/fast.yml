@@ -2,7 +2,7 @@ name: fast
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # Every 5 minutes (disabled by default on public GHA runners unless RUNNER_LABEL is self-hosted)
+    - cron: '*/5 * * * *'   # Every 5 minutes — synced with web dashboard refresh cadence
   workflow_dispatch:
 
 defaults:
@@ -12,21 +12,30 @@ defaults:
 permissions:
   contents: read
 
+concurrency:
+  group: hermes-fast
+  cancel-in-progress: true   # If a previous 5-min run is still going, skip it
+
 jobs:
   fast-cycle:
-    # Requires self-hosted or dedicated runner label to avoid consuming public GHA minute quota
-    if: github.repository_owner == 'behnialucas-droid' && vars.FAST_CYCLES_ENABLED == 'true'
+    # Enabled by default on public repos — no FAST_CYCLES_ENABLED gate needed
+    # Public repos get unlimited ubuntu-latest minutes on GitHub Actions
     runs-on: ubuntu-latest
     timeout-minutes: 4
 
     env:
-      DATABASE_URL:       ${{ secrets.DATABASE_URL }}
-      PM_MIN_INTERVAL_MS: ${{ vars.PM_MIN_INTERVAL_MS }}
-      PM_MAX_CONCURRENT:  ${{ vars.PM_MAX_CONCURRENT }}
-      WALLET_SCAN_LIMIT:  '10'
+      DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+      TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+      PM_MIN_INTERVAL_MS:  ${{ vars.PM_MIN_INTERVAL_MS }}
+      PM_MAX_CONCURRENT:   ${{ vars.PM_MAX_CONCURRENT }}
+      WALLET_SCAN_LIMIT:   '20'   # Raised from 10 — covers tracked wallets faster
+      CYCLE_ENABLED:       ${{ vars.CYCLE_ENABLED }}
 
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22.11'

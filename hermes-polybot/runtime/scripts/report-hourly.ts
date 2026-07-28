@@ -6,7 +6,7 @@
  * Sequence:
  *   1. Auto-update rules pass (engine untouched)
  *   2. Staleness watchdog — reads Heartbeat table
- *   3. Rescan due-check — runs inside an already-billed minute
+ *   3. Rescan due-check — if due, AUTO-DISPATCHES next generation
  *   4. Telegram report — ALWAYS sends, even when degraded
  *   5. Heartbeat record for 'hourly'
  *
@@ -15,11 +15,12 @@
  * is how silent crash windows happen.
  */
 
-import { getDb } from '../src/lib/db.ts';
+import { getDb, resetDb } from '../src/lib/db.ts';
 import { readHeartbeats, heartbeat } from '../src/lib/heartbeat.ts';
 import { sendTelegram } from '../src/lib/telegram.ts';
 import { buildReport } from '../src/lib/report.ts';
 import { autoUpdateRules, getActiveRules } from '../src/lib/engine/rules.ts';
+import { isRescanDue, openGeneration, dispatchRescan } from '../src/lib/rescan.ts';
 import { redact, num, optional, bool } from '../src/lib/env.ts';
 
 async function main(): Promise<void> {
@@ -56,9 +57,12 @@ async function main(): Promise<void> {
           problems.push(`${b.name} has not succeeded for ${Math.round(ageMin)} min`);
         }
       }
+      // Only report consecutiveFailures if it's >= 3 AND include only the first line of the error
+      // to avoid cascade-nesting previous reports inside this one.
       if (b.consecutiveFailures >= 3) {
+        const errFirstLine = (b.lastError ?? 'unknown error').split('\n')[0].trim().slice(0, 200);
         problems.push(
-          `${b.name} failed ${b.consecutiveFailures}x in a row: ${b.lastError ?? 'unknown error'}`
+          `${b.name} failed ${b.consecutiveFailures}x in a row: ${errFirstLine}`
         );
       }
     }
@@ -66,33 +70,43 @@ async function main(): Promise<void> {
     problems.push(`watchdog query error: ${redact(e)}`);
   }
 
-  // --- 3. Rescan due-check ---
+  // --- 3. Rescan due-check + AUTO-DISPATCH ---
   let rescanNote = 'not due';
   if (bool('RESCAN_ENABLED', true)) {
     try {
-      // Import dynamically or check RescanRun directly
-      const [rescanRunRow] = await db`
-        SELECT coalesce(max("generation"), 0)::int AS "lastGen",
-               max("completedAt") FILTER (WHERE "status" IN ('complete','degraded')) AS "lastCompletedAt",
-               coalesce(bool_or("status" = 'running'), false) AS "inProgress"
-        FROM "RescanRun"
-      `;
-
-      const lastMs = rescanRunRow?.lastCompletedAt ? new Date(rescanRunRow.lastCompletedAt).getTime() : 0;
-      const elapsedDays = lastMs > 0 ? (t0 - lastMs) / 86_400_000 : 999;
       const intervalDays = num('RESCAN_INTERVAL_DAYS', 30);
-      const isDue = !rescanRunRow?.inProgress && elapsedDays >= intervalDays;
+      const due = await isRescanDue(intervalDays);
 
-      if (isDue) {
-        rescanNote = `DUE (elapsed ${elapsedDays.toFixed(1)}d >= ${intervalDays}d)`;
-      } else if (rescanRunRow?.inProgress) {
-        rescanNote = `in progress (gen ${rescanRunRow.lastGen})`;
+      if (due.inProgress) {
+        rescanNote = `in progress (gen ${due.lastGeneration})`;
+      } else if (due.isDue) {
+        const nextGen = due.lastGeneration + 1;
+        rescanNote = `DUE (elapsed ${(due.daysRemaining <= 0 ? intervalDays + Math.abs(due.daysRemaining) : intervalDays).toFixed(1)}d >= ${intervalDays}d) → dispatching gen ${nextGen}`;
+
+        // Check WORKFLOW_DISPATCH_TOKEN is configured before trying
+        const token = optional('WORKFLOW_DISPATCH_TOKEN');
+        if (!token) {
+          problems.push('rescan is DUE but WORKFLOW_DISPATCH_TOKEN is not set — cannot dispatch');
+          rescanNote = `DUE but dispatch blocked (missing WORKFLOW_DISPATCH_TOKEN)`;
+        } else {
+          try {
+            // Open the generation row in DB before dispatching
+            await openGeneration(nextGen);
+            await dispatchRescan(nextGen, 1);
+            console.log(`Rescan generation ${nextGen} dispatched (chunk 1)`);
+            rescanNote = `dispatching gen ${nextGen} chunk 1`;
+          } catch (e: unknown) {
+            const dispatchErr = redact(e).split('\n')[0].trim().slice(0, 150);
+            problems.push(`rescan dispatch failed: ${dispatchErr}`);
+            rescanNote = `DUE but dispatch failed`;
+          }
+        }
       } else {
-        const remaining = Math.max(0, intervalDays - elapsedDays);
-        rescanNote = `next in ${remaining.toFixed(1)}d`;
+        rescanNote = `next in ${due.daysRemaining.toFixed(1)}d`;
       }
-    } catch {
+    } catch (e: unknown) {
       rescanNote = 'status check error';
+      problems.push(`rescan check error: ${redact(e).split('\n')[0].slice(0, 150)}`);
     }
   }
 
@@ -110,12 +124,12 @@ async function main(): Promise<void> {
     console.log('Telegram report sent successfully');
   } catch (e: unknown) {
     console.error('Telegram report failed:', redact(e));
-    problems.push(`Telegram send failed: ${redact(e)}`);
+    problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
   }
 
   // --- 5. Heartbeat record for hourly ---
   const isHealthy = problems.length === 0;
-  await heartbeat('hourly', isHealthy, problems.join('; ') || null, {
+  await heartbeat('hourly', isHealthy, problems.length > 0 ? problems[0] : null, {
     durationMs: Date.now() - t0,
     rescanNote,
     problemsCount: problems.length,
@@ -132,6 +146,7 @@ try {
   await main();
 } catch (e: unknown) {
   console.error('report-hourly fatal unhandled exception:', redact(e));
+  resetDb();
   process.exitCode = 1;
 } finally {
   const db = getDb();

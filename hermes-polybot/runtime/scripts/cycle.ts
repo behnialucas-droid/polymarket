@@ -15,7 +15,7 @@
  * Never commits to git. Never bulk-scans 500 wallets. Exits 0 on lock contention.
  */
 
-import { getDb } from '../src/lib/db.ts';
+import { getDb, withDbRetry, resetDb } from '../src/lib/db.ts';
 import { getAdapter, monitorTrades, scoreNewTrades } from './pipeline.ts';
 import { updateOpenPnl, reviewOutcomes } from '../src/lib/engine/paperTrading.ts';
 import { heartbeat } from '../src/lib/heartbeat.ts';
@@ -63,16 +63,28 @@ async function main(): Promise<void> {
 
   try {
     // --- 2. Monitor trades (incremental, per-wallet high-water mark) ---
-    const observed = await monitorTrades(db, adapter);
+    const observed = await withDbRetry(
+      (db) => monitorTrades(db, adapter),
+      'monitorTrades',
+    );
 
     // --- 3. Score new trades ---
-    const { scored, copied } = await scoreNewTrades(db, adapter);
+    const { scored, copied } = await withDbRetry(
+      (db) => scoreNewTrades(db, adapter),
+      'scoreNewTrades',
+    );
 
     // --- 4. Update open PnL ---
-    const pnlUpdated = await updateOpenPnl(db, adapter);
+    const pnlUpdated = await withDbRetry(
+      (db) => updateOpenPnl(db, adapter),
+      'updateOpenPnl',
+    );
 
     // --- 5. Review outcomes ---
-    const resolved = await reviewOutcomes(db, adapter);
+    const resolved = await withDbRetry(
+      (db) => reviewOutcomes(db, adapter),
+      'reviewOutcomes',
+    );
 
     const durationMs = Date.now() - t0;
     const summary = `observed:${observed} scored:${scored} copied:${copied} pnl:${pnlUpdated} resolved:${resolved} timing:${durationMs}ms`;
@@ -84,6 +96,8 @@ async function main(): Promise<void> {
   } catch (e: unknown) {
     const errStr = redact(e);
     console.error('cycle error:', errStr);
+    // Reset DB pool so next run starts fresh
+    resetDb();
     await heartbeat('cycle', false, errStr, { durationMs: Date.now() - t0 });
     process.exitCode = 1;
   } finally {

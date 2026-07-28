@@ -18,7 +18,7 @@ const GENERATION = Number(process.env.RESCAN_GENERATION);
 const CHUNK_INDEX = Number(process.env.RESCAN_CHUNK_INDEX ?? '1');
 const RUN_ID = process.env.GITHUB_RUN_ID ?? `local-${process.pid}`;
 const CHUNK_SIZE = num('RESCAN_CHUNK_SIZE', 250);
-const MAX_CHUNKS = num('RESCAN_MAX_CHUNKS', 20);
+const MAX_CHUNKS = num('RESCAN_MAX_CHUNKS', 40);  // Raised from 20 — public repo, unlimited minutes
 const SOFT_DEADLINE_MS = num('RESCAN_SOFT_DEADLINE_MS', 40 * 60_000); // 40-min soft deadline
 
 if (!Number.isInteger(GENERATION) || GENERATION < 1) {

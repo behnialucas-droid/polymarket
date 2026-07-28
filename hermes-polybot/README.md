@@ -1,4 +1,6 @@
-# Hermes Polybot — Polymarket Copy-Trading Research System
+# Hermes Polybot
+
+> **24/7 Operation**: The bot cycle and hourly reports run fully on GitHub Actions — your laptop does NOT need to be on. The dashboard web UI can be made persistent via systemd (see [24/7 Dashboard](#247-dashboard-setup)). — Polymarket Copy-Trading Research System
 
 **Paper trading only. Not financial advice.**
 
@@ -93,3 +95,29 @@ See [docs/00-ROTATE-SECRETS.md](docs/00-ROTATE-SECRETS.md) for credential rotati
 3. **What did the bot learn today?** — Rules (auto-changes with evidence), Decision Journal.
 
 See [HERMES.md](HERMES.md) for the full operator guide.
+
+## 24/7 Dashboard Setup
+
+The bot **cycle + Telegram reports** run entirely on GitHub Actions — no laptop required.
+
+The **dashboard web UI** (Next.js at `localhost:4000`) is a local process. To keep it alive after reboots, install it as a systemd service:
+
+```bash
+# 1. Copy the service file
+sudo cp docs/hermes-dashboard.service /etc/systemd/system/hermes-dashboard.service
+
+# 2. Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable hermes-dashboard
+sudo systemctl start hermes-dashboard
+
+# 3. Check status
+sudo systemctl status hermes-dashboard
+```
+
+Logs: `sudo journalctl -u hermes-dashboard -f`
+
+To stop: `sudo systemctl stop hermes-dashboard`
+
+> The `.service` file is at [`docs/hermes-dashboard.service`](docs/hermes-dashboard.service).
+> Edit `WorkingDirectory` and `User` if your paths differ.
