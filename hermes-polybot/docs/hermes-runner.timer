@@ -1,9 +1,9 @@
 [Unit]
-Description=Hermes Polybot 15-Minute Timer
+Description=Hermes Polybot 15-Minute Clock Timer
 
 [Timer]
-OnBootSec=1min
-OnUnitActiveSec=15min
+OnCalendar=*:00,15,30,45
+Persistent=true
 Unit=hermes-runner.service
 
 [Install]
