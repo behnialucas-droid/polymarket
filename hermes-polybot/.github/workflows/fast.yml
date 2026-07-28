@@ -11,6 +11,7 @@ defaults:
 
 permissions:
   contents: read
+  actions: write           # needed for rescan dispatch when due
 
 concurrency:
   group: hermes-fast
@@ -18,19 +19,24 @@ concurrency:
 
 jobs:
   fast-cycle:
-    # Enabled by default on public repos — no FAST_CYCLES_ENABLED gate needed
+    # Enabled by default on public repos — no gate needed
     # Public repos get unlimited ubuntu-latest minutes on GitHub Actions
     runs-on: ubuntu-latest
     timeout-minutes: 4
 
     env:
-      DATABASE_URL:        ${{ secrets.DATABASE_URL }}
-      TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
-      PM_MIN_INTERVAL_MS:  ${{ vars.PM_MIN_INTERVAL_MS }}
-      PM_MAX_CONCURRENT:   ${{ vars.PM_MAX_CONCURRENT }}
-      WALLET_SCAN_LIMIT:   '20'   # Raised from 10 — covers tracked wallets faster
-      CYCLE_ENABLED:       ${{ vars.CYCLE_ENABLED }}
+      DATABASE_URL:            ${{ secrets.DATABASE_URL }}
+      TELEGRAM_BOT_TOKEN:      ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID:        ${{ secrets.TELEGRAM_CHAT_ID }}
+      WORKFLOW_DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+      PM_MIN_INTERVAL_MS:      ${{ vars.PM_MIN_INTERVAL_MS }}
+      PM_MAX_CONCURRENT:       ${{ vars.PM_MAX_CONCURRENT }}
+      WALLET_SCAN_LIMIT:       '20'
+      CYCLE_ENABLED:           ${{ vars.CYCLE_ENABLED }}
+      RESCAN_ENABLED:          ${{ vars.RESCAN_ENABLED }}
+      RESCAN_INTERVAL_DAYS:    ${{ vars.RESCAN_INTERVAL_DAYS }}
+      REPORT_TZ:               ${{ vars.REPORT_TZ }}
+      CYCLE_MAX_AGE_MIN:       '15'   # Tighter threshold for 5-min cadence (was 150 for hourly)
 
     steps:
       - uses: actions/checkout@v4
@@ -47,3 +53,7 @@ jobs:
 
       - name: Run fast cycle
         run: npm run cycle
+
+      - name: Run fast report (Telegram)
+        if: always()        # Always send, even if cycle failed — no silent crash windows
+        run: npm run report
