@@ -26,7 +26,7 @@ export interface ReportContext {
 interface DBMetrics {
   copyCount: number;
   watchCount: number;
-  tradesNew5m: number;
+  tradesNew15m: number;
   tradesNew1h: number;
   openPositions: number;
   openPnl: number;
@@ -55,7 +55,7 @@ export async function buildReport(ctx: ReportContext): Promise<string> {
     SELECT
       (SELECT count(*)::int FROM "WalletProfile" WHERE "memoryStatus" = 'copy' OR "status" = 'track')   AS "copyCount",
       (SELECT count(*)::int FROM "WalletProfile" WHERE "memoryStatus" = 'watch' OR "status" = 'watch')  AS "watchCount",
-      (SELECT count(*)::int FROM "ObservedTrade" WHERE "createdAt" > NOW() - INTERVAL '5 minutes')       AS "tradesNew5m",
+      (SELECT count(*)::int FROM "ObservedTrade" WHERE "createdAt" > NOW() - INTERVAL '15 minutes')      AS "tradesNew15m",
       (SELECT count(*)::int FROM "ObservedTrade" WHERE "createdAt" > NOW() - INTERVAL '1 hour')          AS "tradesNew1h",
       (SELECT count(*)::int FROM "PaperTrade" WHERE "status" = 'open')                                   AS "openPositions",
       (SELECT COALESCE(SUM("unrealizedPnl"), 0)::float FROM "PaperTrade" WHERE "status" = 'open')       AS "openPnl",
@@ -93,7 +93,7 @@ export async function buildReport(ctx: ReportContext): Promise<string> {
   lines.push(`<b>Hermes</b> ${esc(nowFormatted)} (${esc(ctx.tz)})`);
   lines.push(`gen <b>${s?.generation ?? 0}</b> · copy <b>${s?.copyCount ?? 0}</b> · watch <b>${s?.watchCount ?? 0}</b>`);
   lines.push('');
-  lines.push(`new trades (5m): <b>${s?.tradesNew5m ?? 0}</b> · (1h: <b>${s?.tradesNew1h ?? 0}</b>)`);
+  lines.push(`new trades (15m): <b>${s?.tradesNew15m ?? 0}</b> · (1h: <b>${s?.tradesNew1h ?? 0}</b>)`);
   lines.push(`open positions: <b>${s?.openPositions ?? 0}</b>  (${fmtSigned(s?.openPnl ?? 0)})`);
   lines.push(`realized 24h: <b>${fmtSigned(s?.realized24h ?? 0)}</b>`);
   lines.push('');

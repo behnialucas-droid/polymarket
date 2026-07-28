@@ -2,7 +2,7 @@ name: fast
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # Every 5 minutes — synced with web dashboard refresh cadence
+    - cron: '*/15 * * * *'   # Every 15 minutes — synced with 15m dashboard & report cadence
   workflow_dispatch:
 
 defaults:
@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: hermes-fast
-  cancel-in-progress: true   # Skip pile-ups if previous run takes > 5m
+  cancel-in-progress: true   # Skip pile-ups if previous run takes > 15m
 
 jobs:
   fast-cycle:
@@ -34,7 +34,7 @@ jobs:
       RESCAN_ENABLED:          'true'
       RESCAN_INTERVAL_DAYS:    '30'
       REPORT_TZ:               'UTC'
-      CYCLE_MAX_AGE_MIN:       '15'
+      CYCLE_MAX_AGE_MIN:       '45'   # 45-min threshold for 15-min cadence
 
     steps:
       - uses: actions/checkout@v4
