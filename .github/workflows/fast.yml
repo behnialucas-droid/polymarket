@@ -29,7 +29,7 @@ jobs:
       WORKFLOW_DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
       PM_MIN_INTERVAL_MS:      ${{ vars.PM_MIN_INTERVAL_MS }}
       PM_MAX_CONCURRENT:       ${{ vars.PM_MAX_CONCURRENT }}
-      WALLET_SCAN_LIMIT:       '20'
+      WALLET_SCAN_LIMIT:       '500'
       CYCLE_ENABLED:           'true'
       RESCAN_ENABLED:          'true'
       RESCAN_INTERVAL_DAYS:    '30'
