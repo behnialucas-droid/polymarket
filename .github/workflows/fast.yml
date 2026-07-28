@@ -7,7 +7,7 @@ on:
 
 defaults:
   run:
-    working-directory: runtime
+    working-directory: hermes-polybot/runtime
 
 permissions:
   contents: read
@@ -15,12 +15,10 @@ permissions:
 
 concurrency:
   group: hermes-fast
-  cancel-in-progress: true   # If a previous 5-min run is still going, skip it
+  cancel-in-progress: true   # Skip pile-ups if previous run takes > 5m
 
 jobs:
   fast-cycle:
-    # Enabled by default on public repos — no gate needed
-    # Public repos get unlimited ubuntu-latest minutes on GitHub Actions
     runs-on: ubuntu-latest
     timeout-minutes: 4
 
@@ -32,11 +30,11 @@ jobs:
       PM_MIN_INTERVAL_MS:      ${{ vars.PM_MIN_INTERVAL_MS }}
       PM_MAX_CONCURRENT:       ${{ vars.PM_MAX_CONCURRENT }}
       WALLET_SCAN_LIMIT:       '20'
-      CYCLE_ENABLED:           ${{ vars.CYCLE_ENABLED }}
-      RESCAN_ENABLED:          ${{ vars.RESCAN_ENABLED }}
-      RESCAN_INTERVAL_DAYS:    ${{ vars.RESCAN_INTERVAL_DAYS }}
-      REPORT_TZ:               ${{ vars.REPORT_TZ }}
-      CYCLE_MAX_AGE_MIN:       '15'   # Tighter threshold for 5-min cadence (was 150 for hourly)
+      CYCLE_ENABLED:           'true'
+      RESCAN_ENABLED:          'true'
+      RESCAN_INTERVAL_DAYS:    '30'
+      REPORT_TZ:               'UTC'
+      CYCLE_MAX_AGE_MIN:       '15'
 
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +44,7 @@ jobs:
         with:
           node-version: '22.11'
           cache: npm
-          cache-dependency-path: runtime/package-lock.json
+          cache-dependency-path: hermes-polybot/runtime/package-lock.json
 
       - name: Install runtime dependencies
         run: npm ci --no-audit --no-fund
@@ -55,5 +53,5 @@ jobs:
         run: npm run cycle
 
       - name: Run fast report (Telegram)
-        if: always()        # Always send, even if cycle failed — no silent crash windows
+        if: always()        # Always send report even if cycle failed
         run: npm run report

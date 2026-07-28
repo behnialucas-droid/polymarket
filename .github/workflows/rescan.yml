@@ -15,7 +15,7 @@ on:
 
 defaults:
   run:
-    working-directory: runtime
+    working-directory: hermes-polybot/runtime
 
 permissions:
   contents: write          # required to commit and push memory/ projection
@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: '22.11'
           cache: npm
-          cache-dependency-path: runtime/package-lock.json
+          cache-dependency-path: hermes-polybot/runtime/package-lock.json
 
       - name: Install runtime dependencies
         run: npm ci --no-audit --no-fund

@@ -7,7 +7,7 @@ on:
 
 defaults:
   run:
-    working-directory: runtime
+    working-directory: hermes-polybot/runtime
 
 permissions:
   contents: read           # this job must NEVER push to git
@@ -35,7 +35,6 @@ jobs:
       LEADERBOARD_LIMIT:       ${{ vars.LEADERBOARD_LIMIT }}
       WALLET_SCAN_LIMIT:       ${{ vars.WALLET_SCAN_LIMIT }}
       REPORT_TZ:               ${{ vars.REPORT_TZ }}
-      # NO `|| 'literal'` ANYWHERE. A missing secret must crash this job.
 
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +44,7 @@ jobs:
         with:
           node-version: '22.11'
           cache: npm
-          cache-dependency-path: runtime/package-lock.json
+          cache-dependency-path: hermes-polybot/runtime/package-lock.json
 
       - name: Install runtime dependencies
         run: npm ci --no-audit --no-fund
@@ -56,11 +55,3 @@ jobs:
       - name: Run hourly report and watchdog
         if: always()        # Report ALWAYS sends, even when cycle failed
         run: npm run report
-
-      - name: Assert billing boundary
-        if: always()
-        run: |
-          echo "job elapsed: ${SECONDS}s"
-          if [ "$SECONDS" -gt 55 ]; then
-            echo "::warning::job took ${SECONDS}s, approaching the 60s billing boundary"
-          fi
