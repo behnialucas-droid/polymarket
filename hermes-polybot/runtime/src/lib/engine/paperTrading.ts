@@ -50,16 +50,23 @@ export async function updateOpenPnl(db: postgres.Sql, adapter: DataAdapter): Pro
   };
 
   let updatedCount = 0;
-  for (const t of open) {
-    try {
-      const price = await getPrice(t.marketId, t.outcome);
-      const pnl = computePnl(t.entryPrice, price, t.simulatedPositionSize);
-      await db`UPDATE "PaperTrade" SET "currentPrice" = ${price}, "unrealizedPnl" = ${pnl} WHERE "id" = ${t.id}`;
-      await db`INSERT INTO "PnlSnapshot" ("paperTradeId", "price", "pnl") VALUES (${t.id}, ${price}, ${pnl})`;
-      updatedCount++;
-    } catch (e: any) {
-      console.warn(`[paperTrading] updateOpenPnl failed for market ${t.marketId}:`, e?.message ?? e);
-    }
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < open.length; i += BATCH_SIZE) {
+    const batch = open.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (t) => {
+        try {
+          const price = await getPrice(t.marketId, t.outcome);
+          if (isNaN(price)) return;
+          const pnl = computePnl(t.entryPrice, price, t.simulatedPositionSize);
+          await db`UPDATE "PaperTrade" SET "currentPrice" = ${price}, "unrealizedPnl" = ${pnl} WHERE "id" = ${t.id}`;
+          await db`INSERT INTO "PnlSnapshot" ("paperTradeId", "price", "pnl") VALUES (${t.id}, ${price}, ${pnl})`;
+          updatedCount++;
+        } catch (e: any) {
+          console.warn(`[paperTrading] updateOpenPnl failed for market ${t.marketId}:`, e?.message ?? e);
+        }
+      })
+    );
   }
   return updatedCount;
 }
