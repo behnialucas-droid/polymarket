@@ -58,24 +58,41 @@ export class PolymarketAdapter implements DataAdapter {
     try {
       rows = await getJson(`${DATA}/activity?user=${address}&type=TRADE&limit=500&start=${sinceTs}`);
     } catch {
-      // Fallback to smaller page size if limit=500 fails
       rows = await getJson(`${DATA}/activity?user=${address}&type=TRADE&limit=100&start=${sinceTs}`);
     }
+    const observedAt = new Date().toISOString();
     return (rows ?? [])
       .filter((t) => Number(t.timestamp) >= sinceTs)
-      .map((t) => ({
-        walletAddress: address,
-        marketId: String(t.market ?? t.conditionId ?? ''),
-        conditionId: t.conditionId,
-        marketQuestion: t.title ?? t.question,
-        marketCategory: t.eventSlug ?? t.category,
-        outcome: t.outcome,
-        side: (t.side ?? 'BUY').toUpperCase() === 'SELL' ? 'SELL' : 'BUY',
-        price: Number(t.price),
-        size: Number(t.usdcSize ?? t.size ?? 0),
-        timestamp: new Date(Number(t.timestamp) * 1000).toISOString(),
-        raw: t,
-      }));
+      .map((t) => {
+        const side = String(t.side ?? '').toUpperCase();
+        if (side !== 'BUY' && side !== 'SELL') throw new AdapterError(`Unsupported trade side: ${String(t.side)}`);
+        const quantityShares = Number(t.size);
+        const notionalUsd = Number(t.usdcSize);
+        const price = Number(t.price);
+        if (!Number.isFinite(price) || price <= 0 || price >= 1) throw new AdapterError('Trade has invalid price');
+        if (!Number.isFinite(quantityShares) || quantityShares <= 0) throw new AdapterError('Trade has invalid share quantity');
+        if (!Number.isFinite(notionalUsd) || notionalUsd <= 0) throw new AdapterError('Trade has invalid USDC notional');
+        return {
+          walletAddress: address,
+          marketId: String(t.market ?? t.conditionId ?? ''),
+          conditionId: t.conditionId,
+          marketQuestion: t.title ?? t.question,
+          marketCategory: t.eventSlug ?? t.category,
+          outcome: t.outcome,
+          side,
+          price,
+          size: notionalUsd,
+          quantityShares,
+          notionalUsd,
+          providerEventId: t.id == null ? undefined : String(t.id),
+          transactionHash: t.transactionHash == null ? undefined : String(t.transactionHash),
+          assetId: t.asset == null ? undefined : String(t.asset),
+          outcomeIndex: Number.isInteger(Number(t.outcomeIndex)) ? Number(t.outcomeIndex) : undefined,
+          timestamp: new Date(Number(t.timestamp) * 1000).toISOString(),
+          observedAt,
+          raw: t,
+        };
+      });
   }
 
   async fetchMarket(marketId: string): Promise<MarketData> {
@@ -102,6 +119,8 @@ export class PolymarketAdapter implements DataAdapter {
       spread: ask && bid ? ask - bid : undefined,
       liquidity: Number(m.liquidityNum ?? m.liquidity ?? 0),
       volume: Number(m.volumeNum ?? m.volume ?? 0),
+      endDateIso: m.endDate ?? undefined,
+      slug: m.slug ?? m.eventSlug ?? undefined,
       timeToResolutionHours: m.endDate ? (new Date(m.endDate).getTime() - Date.now()) / 3.6e6 : undefined,
       resolved: Boolean(m.closed),
       resolvedOutcome: (() => {

@@ -1,0 +1,27 @@
+{
+  "category": "crypto",
+  "volume": 60000,
+  "marketId": "demo-eth-up-aug1",
+  "conditionId": "cond-demo-eth-aug1",
+  "question": "Ethereum up on Aug 1? (demo)",
+  "slug": "ethereum-up-or-down-august-1",
+  "liquidity": 30000,
+  "endDateIso": "2026-08-01T16:00:00.000Z",
+  "timeline": [
+    {
+      "atIso": "2026-07-31T23:30:00.000Z",
+      "yesPrice": 0.62,
+      "bestBid": 0.61,
+      "bestAsk": 0.63
+    },
+    {
+      "atIso": "2026-08-01T16:30:00.000Z",
+      "yesPrice": 0.01,
+      "bestBid": 0.01,
+      "bestAsk": 0.02,
+      "resolved": true,
+      "resolvedOutcome": "No",
+      "umaResolutionStatus": "resolved"
+    }
+  ]
+}

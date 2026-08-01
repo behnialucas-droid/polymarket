@@ -1,0 +1,27 @@
+{
+  "marketId": "demo-hist-6",
+  "conditionId": "cond-demo-hist-6",
+  "question": "Demo history market 6: crypto up today?",
+  "category": "crypto",
+  "slug": "demo-hist-6-up-or-down",
+  "liquidity": 70000,
+  "volume": 90000,
+  "endDateIso": "2026-07-23T11:00:00.000Z",
+  "timeline": [
+    {
+      "atIso": "2026-07-23T06:00:00.000Z",
+      "yesPrice": 0.5,
+      "bestBid": 0.49,
+      "bestAsk": 0.51
+    },
+    {
+      "atIso": "2026-07-23T11:30:00.000Z",
+      "yesPrice": 0.01,
+      "bestBid": 0.01,
+      "bestAsk": 0.02,
+      "resolved": true,
+      "resolvedOutcome": "No",
+      "umaResolutionStatus": "resolved"
+    }
+  ]
+}

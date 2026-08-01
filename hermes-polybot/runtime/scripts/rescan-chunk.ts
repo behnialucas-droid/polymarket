@@ -102,6 +102,7 @@ async function main(): Promise<void> {
             daysSinceLastTrade: 1,
             oneHitWonderFlag: Number(wp.oneHitWonderPenalty ?? 0) > 0.3,
             topTradePnlShare: Number(wp.oneHitWonderPenalty ?? 0),
+            shortTermShare: Number(wp.shortTermShare ?? 0),
           },
           (memoryStatus as any) ?? undefined
         );

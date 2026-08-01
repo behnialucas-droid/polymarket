@@ -10,6 +10,8 @@ export interface Rules {
   minWatchScore: number; // threshold for watchlist
   minResolvedTrades: number;
   maxTimeToResolutionHours: number;
+  /** Minimum fraction of a wallet's 30d trades that were short-term commitments. */
+  minShortTermShare: number;
   weights: {
     roi: number;
     consistency: number;
@@ -30,9 +32,48 @@ export const DEFAULT_RULES: Rules = {
   minCopyScore: 0.65,
   minWatchScore: 0.45,
   minResolvedTrades: 5,
-  maxTimeToResolutionHours: 24 * 60,
+  maxTimeToResolutionHours: 24, // Short-term markets only (<= 24 hours to resolution)
+  minShortTermShare: 0.5, // wallets that mostly trade long-term never reach 'track'
   weights: { roi: 0.2, consistency: 0.15, copyability: 0.15, categoryFit: 0.1, entryTiming: 0.1, spread: 0.1, liquidity: 0.1, thesis: 0.1 },
 };
+
+const finitePositive = (value: unknown, fallback: number, max: number): number => {
+  const n = typeof value === 'number' ? value : Number.NaN;
+  return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
+};
+
+const finiteFraction = (value: unknown, fallback: number): number => {
+  const n = typeof value === 'number' ? value : Number.NaN;
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
+};
+
+/** Normalize persisted JSON at the trust boundary. Invalid config must fail closed to safe defaults,
+ * never disable every signal with a negative/NaN horizon or silently poison scoring. */
+export function normalizeRules(raw: unknown): Rules {
+  const input = raw && typeof raw === 'object' ? raw as Partial<Rules> : {};
+  const weights = input.weights && typeof input.weights === 'object' ? input.weights : {};
+  return {
+    minLiquidity: finitePositive(input.minLiquidity, DEFAULT_RULES.minLiquidity, 10_000_000),
+    maxSpread: finitePositive(input.maxSpread, DEFAULT_RULES.maxSpread, 1),
+    maxPriceMoveSinceEntry: finitePositive(input.maxPriceMoveSinceEntry, DEFAULT_RULES.maxPriceMoveSinceEntry, 1),
+    minWalletGlobalScore: finiteFraction(input.minWalletGlobalScore, DEFAULT_RULES.minWalletGlobalScore),
+    minCopyScore: finiteFraction(input.minCopyScore, DEFAULT_RULES.minCopyScore),
+    minWatchScore: finiteFraction(input.minWatchScore, DEFAULT_RULES.minWatchScore),
+    minResolvedTrades: Math.max(0, Math.floor(finitePositive(input.minResolvedTrades, DEFAULT_RULES.minResolvedTrades, 100_000))),
+    maxTimeToResolutionHours: finitePositive(input.maxTimeToResolutionHours, DEFAULT_RULES.maxTimeToResolutionHours, 48),
+    minShortTermShare: finiteFraction(input.minShortTermShare, DEFAULT_RULES.minShortTermShare),
+    weights: {
+      roi: finiteFraction((weights as Partial<Rules['weights']>).roi, DEFAULT_RULES.weights.roi),
+      consistency: finiteFraction((weights as Partial<Rules['weights']>).consistency, DEFAULT_RULES.weights.consistency),
+      copyability: finiteFraction((weights as Partial<Rules['weights']>).copyability, DEFAULT_RULES.weights.copyability),
+      categoryFit: finiteFraction((weights as Partial<Rules['weights']>).categoryFit, DEFAULT_RULES.weights.categoryFit),
+      entryTiming: finiteFraction((weights as Partial<Rules['weights']>).entryTiming, DEFAULT_RULES.weights.entryTiming),
+      spread: finiteFraction((weights as Partial<Rules['weights']>).spread, DEFAULT_RULES.weights.spread),
+      liquidity: finiteFraction((weights as Partial<Rules['weights']>).liquidity, DEFAULT_RULES.weights.liquidity),
+      thesis: finiteFraction((weights as Partial<Rules['weights']>).thesis, DEFAULT_RULES.weights.thesis),
+    },
+  };
+}
 
 export async function getActiveRules(db: postgres.Sql): Promise<{ rules: Rules; version: number; id: number }> {
   const row = await db`SELECT "id", "version", "rulesJson" FROM "RuleSet" WHERE "active" = 1 ORDER BY "version" DESC LIMIT 1`;
@@ -40,7 +81,8 @@ export async function getActiveRules(db: postgres.Sql): Promise<{ rules: Rules; 
     const res = await db`INSERT INTO "RuleSet" ("version", "active", "rulesJson") VALUES (1, 1, ${JSON.stringify(DEFAULT_RULES)}) RETURNING "id"`;
     return { rules: { ...DEFAULT_RULES }, version: 1, id: Number(res[0].id) };
   }
-  return { rules: JSON.parse(row[0].rulesJson), version: row[0].version, id: row[0].id };
+  const rules = normalizeRules(JSON.parse(row[0].rulesJson));
+  return { rules, version: row[0].version, id: row[0].id };
 }
 
 export interface RuleChangeInput {

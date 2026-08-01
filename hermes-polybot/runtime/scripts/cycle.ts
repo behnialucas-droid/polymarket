@@ -17,7 +17,8 @@
 
 import { getDb, withDbRetry, resetDb } from '../src/lib/db.ts';
 import { getAdapter, monitorTrades, scoreNewTrades } from './pipeline.ts';
-import { updateOpenPnl, reviewOutcomes } from '../src/lib/engine/paperTrading.ts';
+import { updateOpenPnl, updateSignedMarks, reviewOutcomes } from '../src/lib/engine/paperTrading.ts';
+import { recordResolutionEvidence, finalizeSettlements } from '../src/lib/engine/settlementDb.ts';
 import { heartbeat } from '../src/lib/heartbeat.ts';
 import { redact, bool } from '../src/lib/env.ts';
 
@@ -74,24 +75,37 @@ async function main(): Promise<void> {
       'scoreNewTrades',
     );
 
-    // --- 4. Update open PnL ---
+    // --- 4. Update open PnL: legacy frozen book + signed v2 marks ---
     const pnlUpdated = await withDbRetry(
       (db) => updateOpenPnl(db, adapter),
       'updateOpenPnl',
     );
+    const marked = await withDbRetry(
+      (db) => updateSignedMarks(db, adapter),
+      'updateSignedMarks',
+    );
 
-    // --- 5. Review outcomes ---
+    // --- 5. Outcomes: legacy review drains the frozen v1 book; the signed
+    // book settles ONLY from confirmed resolution evidence ---
     const resolved = await withDbRetry(
       (db) => reviewOutcomes(db, adapter),
       'reviewOutcomes',
     );
+    const evidenced = await withDbRetry(
+      (db) => recordResolutionEvidence(db, adapter),
+      'recordResolutionEvidence',
+    );
+    const settled = await withDbRetry(
+      (db) => finalizeSettlements(db),
+      'finalizeSettlements',
+    );
 
     const durationMs = Date.now() - t0;
-    const summary = `observed:${observed} scored:${scored} copied:${copied} pnl:${pnlUpdated} resolved:${resolved} timing:${durationMs}ms`;
+    const summary = `observed:${observed} scored:${scored} copied:${copied} pnl:${pnlUpdated} marked:${marked} resolved:${resolved} evidence:${evidenced} settled:${settled} timing:${durationMs}ms`;
     console.log(summary);
 
     await heartbeat('cycle', true, null, {
-      observed, scored, copied, pnlUpdated, resolved, durationMs
+      observed, scored, copied, pnlUpdated, marked, resolved, evidenced, settled, durationMs
     });
   } catch (e: unknown) {
     const errStr = redact(e);

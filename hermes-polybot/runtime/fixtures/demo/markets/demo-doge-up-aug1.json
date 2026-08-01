@@ -1,0 +1,27 @@
+{
+  "category": "crypto",
+  "volume": 60000,
+  "marketId": "demo-doge-up-aug1",
+  "conditionId": "cond-demo-doge-aug1",
+  "question": "Dogecoin up on Aug 1? (demo)",
+  "slug": "dogecoin-up-or-down-august-1",
+  "liquidity": 22000,
+  "endDateIso": "2026-08-01T20:00:00.000Z",
+  "timeline": [
+    {
+      "atIso": "2026-07-31T23:30:00.000Z",
+      "yesPrice": 0.7,
+      "bestBid": 0.69,
+      "bestAsk": 0.71
+    },
+    {
+      "atIso": "2026-08-01T20:30:00.000Z",
+      "yesPrice": 0.01,
+      "bestBid": 0.01,
+      "bestAsk": 0.02,
+      "resolved": true,
+      "resolvedOutcome": "No",
+      "umaResolutionStatus": "resolved"
+    }
+  ]
+}

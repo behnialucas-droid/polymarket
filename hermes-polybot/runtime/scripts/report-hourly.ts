@@ -22,6 +22,7 @@ import { buildReport } from '../src/lib/report.ts';
 import { autoUpdateRules, getActiveRules } from '../src/lib/engine/rules.ts';
 import { isRescanDue, openGeneration, dispatchRescan } from '../src/lib/rescan.ts';
 import { redact, num, optional, bool } from '../src/lib/env.ts';
+import { claimReportRun, deliverClaimedReport } from '../src/lib/reporting.ts';
 
 async function main(): Promise<void> {
   const t0 = Date.now();
@@ -29,13 +30,18 @@ async function main(): Promise<void> {
   const problems: string[] = [];
 
   // --- 1. Rules pass ---
+  // Default OFF: the preregistered trial evaluates a FROZEN policy. Adaptive
+  // rule updates mid-trial would invalidate preregistration (see everything/
+  // 10-PREREGISTRATION.md). Opt back in explicitly outside trial windows.
   let rulesVersion = 'v1';
   let rulesTriggered = 0;
   try {
-    const changes = await autoUpdateRules(db);
+    if (bool('RULES_AUTOUPDATE_ENABLED', false)) {
+      const changes = await autoUpdateRules(db);
+      rulesTriggered = changes.length;
+    }
     const { rules } = await getActiveRules(db);
     rulesVersion = rules.version ? `v${rules.version}` : 'v1';
-    rulesTriggered = changes.length;
   } catch (e: unknown) {
     problems.push(`rules pass error: ${redact(e)}`);
   }
@@ -110,7 +116,9 @@ async function main(): Promise<void> {
     }
   }
 
-  // --- 4. Telegram report (ALWAYS sends) ---
+  // --- 4. Telegram report (ALWAYS attempts; idempotent per 15-minute window) ---
+  // ReportRun (kind, periodKey) UNIQUE makes overlapping runners send at most
+  // once per window; every delivery attempt is recorded as evidence.
   const tz = optional('REPORT_TZ', 'UTC') ?? 'UTC';
   const reportText = await buildReport({
     rules: { version: rulesVersion, triggered: rulesTriggered },
@@ -119,12 +127,32 @@ async function main(): Promise<void> {
     tz,
   });
 
+  const windowMs = 15 * 60_000;
+  const periodKey = new Date(Math.floor(Date.now() / windowMs) * windowMs).toISOString();
+  let claim;
   try {
-    await sendTelegram(reportText);
-    console.log('Telegram report sent successfully');
+    claim = await claimReportRun(db, 'hourly', periodKey);
   } catch (e: unknown) {
-    console.error('Telegram report failed:', redact(e));
-    problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
+    console.warn('ReportRun unavailable, sending without idempotency:', redact(e).split('\n')[0]);
+    try {
+      await sendTelegram(reportText);
+      console.log('Telegram report sent successfully');
+    } catch (sendError: unknown) {
+      console.error('Telegram report failed:', redact(sendError));
+      problems.push(`Telegram send failed: ${redact(sendError).split('\n')[0].slice(0, 100)}`);
+    }
+  }
+
+  if (claim === null) {
+    console.log(`report window ${periodKey} already sent or is actively sending — skipping duplicate send`);
+  } else if (claim) {
+    try {
+      await deliverClaimedReport(db, claim, () => sendTelegram(reportText));
+      console.log('Telegram report sent successfully');
+    } catch (e: unknown) {
+      console.error('Telegram report failed:', redact(e));
+      problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
+    }
   }
 
   // --- 5. Heartbeat record for hourly ---

@@ -1,6 +1,8 @@
+// GENERATED FROM runtime/src/lib — DO NOT EDIT. Run: npm --prefix runtime run sync-dashboard-lib
 /** Per-trade scoring: paper_copy | watchlist | skip, with reasons + risks. */
 import type { MarketData, WalletTrade } from '../adapters/types.ts';
 import type { Rules } from './rules.ts';
+import { hoursToResolution, isShortTerm, isShortTermSubject, horizonScore } from './horizon.ts';
 
 export interface TradeDecision {
   decision: 'paper_copy' | 'watchlist' | 'skip';
@@ -18,6 +20,8 @@ export interface TradeDecision {
     spreadScore: number;
     liquidityScore: number;
     thesisScore: number;
+    /** 1.0 = resolving imminently, 0.0 = at/over the short-term ceiling. */
+    horizonScore: number;
   };
   simulatedPositionSize: number | null;
 }
@@ -33,7 +37,13 @@ export interface WalletContext {
 
 const clamp = (x: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, x));
 
-export function scoreTrade(trade: WalletTrade, market: MarketData, wallet: WalletContext, rules: Rules): TradeDecision {
+export function scoreTrade(
+  trade: WalletTrade,
+  market: MarketData,
+  wallet: WalletContext,
+  rules: Rules,
+  nowMs: number = Date.now(),
+): TradeDecision {
   const reasons: string[] = [];
   const risks: string[] = [];
 
@@ -41,7 +51,9 @@ export function scoreTrade(trade: WalletTrade, market: MarketData, wallet: Walle
   const priceMove = currentPrice - trade.price;
   const spread = market.spread ?? 0.1;
   const liquidity = market.liquidity ?? 0;
-  const ttr = market.timeToResolutionHours ?? Infinity;
+  const ttr = hoursToResolution(market, nowMs);
+  const shortTerm = isShortTerm(market, nowMs, rules.maxTimeToResolutionHours);
+  const horizon = horizonScore(ttr, rules.maxTimeToResolutionHours);
 
   const walletQualityScore = clamp(wallet.globalScore);
   const roiScore = clamp((wallet.roi30d + 0.2) / 0.6);
@@ -53,9 +65,11 @@ export function scoreTrade(trade: WalletTrade, market: MarketData, wallet: Walle
   const entryTimingScore = clamp(1 - Math.abs(priceMove) / rules.maxPriceMoveSinceEntry);
   const spreadScore = clamp(1 - spread / rules.maxSpread / 2);
   const liquidityScore = clamp(liquidity / (rules.minLiquidity * 4));
-  // thesis clarity: proxy = trade is BUY on a wallet's strong category with sane price
+  // thesis clarity: proxy = trade is BUY on a wallet's strong category with sane price,
+  // plus a small bonus for recognisably fast-resolving subjects (BTC/ETH price, daily up-or-down).
   const thesisScore = clamp(
-    (trade.side === 'BUY' ? 0.6 : 0.3) + (trade.marketCategory === wallet.bestCategory ? 0.3 : 0) + (currentPrice > 0.1 && currentPrice < 0.9 ? 0.1 : 0),
+    (trade.side === 'BUY' ? 0.6 : 0.3) + (trade.marketCategory === wallet.bestCategory ? 0.3 : 0) + (currentPrice > 0.1 && currentPrice < 0.9 ? 0.1 : 0)
+      + (isShortTermSubject(market.question, market.slug, trade.marketQuestion, trade.marketCategory) ? 0.1 : 0),
   );
 
   const w = rules.weights;
@@ -78,8 +92,17 @@ export function scoreTrade(trade: WalletTrade, market: MarketData, wallet: Walle
   if (spread > rules.maxSpread) { gated = 'skip'; risks.push(`spread ${spread.toFixed(3)} above maximum ${rules.maxSpread}`); }
   if (Math.abs(priceMove) > rules.maxPriceMoveSinceEntry) { gated = 'skip'; risks.push(`price moved ${priceMove.toFixed(3)} since wallet entry (limit ${rules.maxPriceMoveSinceEntry})`); }
   if (wallet.globalScore < rules.minWalletGlobalScore) { gated = 'skip'; risks.push(`wallet global score ${wallet.globalScore} below minimum ${rules.minWalletGlobalScore}`); }
-  if (ttr > rules.maxTimeToResolutionHours) { gated = 'skip'; risks.push(`resolution too far out (${Math.round(ttr)}h)`); }
+  // Short-term only. Covers three distinct failures with one gate:
+  //   ttr undefined  -> market has no usable deadline
+  //   ttr <= 0       -> deadline already passed but market not settled (capital would sit open for weeks)
+  //   ttr > ceiling  -> genuine long-term market
+  if (!shortTerm) {
+    gated = 'skip';
+    const detail = ttr === undefined ? 'no end date' : ttr <= 0 ? `expired ${Math.round(-ttr)}h ago, unsettled` : `${Math.round(ttr)}h out`;
+    risks.push(`not short-term (${detail}, limit ${rules.maxTimeToResolutionHours}h)`);
+  }
   if (market.resolved) { gated = 'skip'; risks.push('market already resolved'); }
+  if (trade.side === 'SELL') risks.push('SELL requires a signed short action, collateral admission, and executable short quote');
 
   let decision: TradeDecision['decision'];
   if (gated) decision = 'skip';
@@ -91,6 +114,7 @@ export function scoreTrade(trade: WalletTrade, market: MarketData, wallet: Walle
     if (spread > rules.maxSpread * 0.7) risks.push('spread near limit');
     if (priceMove > 0) risks.push(`entering ${priceMove.toFixed(3)} above wallet entry`);
     reasons.push(`wallet quality ${walletQualityScore}, liquidity ${liquidity}, spread ${spread.toFixed(3)}`);
+    if (ttr !== undefined) reasons.push(`resolves in ${Math.round(ttr)}h`);
   }
 
   const denom = Math.max(0.01, 1 - rules.minCopyScore);
@@ -101,7 +125,7 @@ export function scoreTrade(trade: WalletTrade, market: MarketData, wallet: Walle
   return {
     decision, copyScore: Math.round(copyScore * 100) / 100, confidence: Math.round(confidence * 100) / 100,
     reasons, risks,
-    scores: { walletQualityScore, roiScore, consistencyScore, copyabilityScore, categoryFitScore, entryTimingScore, spreadScore, liquidityScore, thesisScore },
+    scores: { walletQualityScore, roiScore, consistencyScore, copyabilityScore, categoryFitScore, entryTimingScore, spreadScore, liquidityScore, thesisScore, horizonScore: Math.round(horizon * 100) / 100 },
     simulatedPositionSize,
   };
 }

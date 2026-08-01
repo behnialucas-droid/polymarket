@@ -1,5 +1,7 @@
+// GENERATED FROM runtime/src/lib — DO NOT EDIT. Run: npm --prefix runtime run sync-dashboard-lib
 /** Wallet scoring: ROI, consistency, copyability, one-hit-wonder penalty, category edge. */
 import type { WalletTrade, MarketData } from '../adapters/types.ts';
+import { shortTermShare as computeShortTermShare, DEFAULT_SHORT_TERM_MAX_HOURS } from './horizon.ts';
 
 export interface TradeWithMarket {
   trade: WalletTrade;
@@ -22,7 +24,9 @@ export interface WalletScore {
   winRate30d: number;
   averageLiquidity: number;
   averageSpread: number;
-  averageEntryTiming: number; // hours before resolution at entry (bigger = earlier)
+  averageEntryTiming: number; // hours before resolution at entry (bigger = earlier). Reported only — not scored.
+  /** Fraction of trades whose capital was committed for <= maxHours (0..1). */
+  shortTermShare: number;
   copyabilityNotes: string;
   riskNotes: string;
 }
@@ -30,7 +34,7 @@ export interface WalletScore {
 const clamp = (x: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, x));
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
-export function scoreWallet(items: TradeWithMarket[]): WalletScore {
+export function scoreWallet(items: TradeWithMarket[], maxHours = DEFAULT_SHORT_TERM_MAX_HOURS): WalletScore {
   const trades = items.map((i) => i.trade);
   const resolved = items.filter((i) => i.pnlPerDollar !== undefined);
   const pnls = resolved.map((i) => (i.pnlPerDollar ?? 0) * i.trade.size);
@@ -57,7 +61,7 @@ export function scoreWallet(items: TradeWithMarket[]): WalletScore {
   }
   if (resolved.length > 0 && resolved.length < 5) oneHitWonderPenalty = clamp(oneHitWonderPenalty + 0.3); // few resolved trades = unreliable
 
-  // copyability: liquidity (falling back to volume for closed/archived markets), spread, entry timing
+  // copyability: liquidity (falling back to volume for closed/archived markets), spread, horizon
   const liqs = items.map((i) => (i.market.liquidity && i.market.liquidity > 0 ? i.market.liquidity : (i.market.volume ?? 10000)));
   const spreads = items.map((i) => i.market.spread ?? 0.1);
   const timings = items.map((i) => i.market.timeToResolutionHours ?? 0);
@@ -66,8 +70,11 @@ export function scoreWallet(items: TradeWithMarket[]): WalletScore {
   const averageEntryTiming = avg(timings);
   const liqScore = clamp(Math.log10(averageLiquidity + 1) / 5); // 100k liquidity -> 1.0
   const spreadScore = clamp(1 - averageSpread / 0.1); // 10c spread -> 0
-  const timingScore = clamp(averageEntryTiming / (24 * 7)); // entering a week early -> 1.0
-  const copyabilityScore = clamp(liqScore * 0.45 + spreadScore * 0.35 + timingScore * 0.2);
+  // Was: timingScore = averageEntryTiming / (24*7), i.e. "entering a week early -> 1.0".
+  // That rewarded exactly the long-term wallets whose trades the 24h copy gate then rejects,
+  // so tracked wallets produced no signals. Now the same weight rewards short commitments.
+  const shortTermShare = computeShortTermShare(items, maxHours);
+  const copyabilityScore = clamp(liqScore * 0.45 + spreadScore * 0.35 + shortTermShare * 0.2);
 
   // category strengths: pnl by category (normalized 0..1)
   const byCat: Record<string, number> = {};
@@ -90,6 +97,7 @@ export function scoreWallet(items: TradeWithMarket[]): WalletScore {
   if (averageLiquidity < 1000) notes.push('trades often illiquid');
   if (oneHitWonderPenalty > 0.3) notes.push('profit concentrated in one trade');
   if (resolved.length < 5) notes.push('few resolved trades');
+  if (shortTermShare < 0.5) notes.push(`mostly long-term markets (${Math.round(shortTermShare * 100)}% short-term)`);
 
   return {
     roi30d: Math.round(roi30d * 10000) / 10000,
@@ -106,14 +114,28 @@ export function scoreWallet(items: TradeWithMarket[]): WalletScore {
     averageLiquidity: Math.round(averageLiquidity),
     averageSpread: Math.round(averageSpread * 1000) / 1000,
     averageEntryTiming: Math.round(averageEntryTiming),
+    shortTermShare: Math.round(shortTermShare * 100) / 100,
     copyabilityNotes: notes.join('; ') || 'no copyability concerns detected',
     riskNotes: oneHitWonderPenalty > 0.5 ? 'high one-hit-wonder risk' : '',
   };
 }
 
-/** track / watch / ignore decision from score + rules thresholds */
-export function walletStatus(s: WalletScore, minGlobalScore: number): { status: 'track' | 'watch' | 'ignore'; reason: string } {
+/** track / watch / ignore decision from score + rules thresholds.
+ * A wallet that mostly trades long-term markets is capped at 'watch': its history stays,
+ * it keeps being monitored, but it never becomes a copy source. */
+export function walletStatus(
+  s: WalletScore,
+  minGlobalScore: number,
+  minShortTermShare = 0.5,
+): { status: 'track' | 'watch' | 'ignore'; reason: string } {
+  const shortTermOk = s.shortTermShare >= minShortTermShare;
   if (s.globalScore >= minGlobalScore && s.oneHitWonderPenalty < 0.5 && s.copyabilityScore >= 0.4) {
+    if (!shortTermOk) {
+      return {
+        status: 'watch',
+        reason: `score ${s.globalScore} qualifies but only ${Math.round(s.shortTermShare * 100)}% of trades are short-term (need ${Math.round(minShortTermShare * 100)}%)`,
+      };
+    }
     return { status: 'track', reason: `global score ${s.globalScore} above threshold ${minGlobalScore}, copyable` };
   }
   if (s.globalScore >= minGlobalScore * 0.7) {
