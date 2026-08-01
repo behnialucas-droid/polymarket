@@ -1,0 +1,24 @@
+{
+  "category": "crypto",
+  "volume": 60000,
+  "marketId": "demo-sol-up-aug2",
+  "conditionId": "cond-demo-sol-aug2",
+  "question": "Solana up by Aug 1 23:00? (demo)",
+  "slug": "solana-up-or-down-august-1",
+  "liquidity": 18000,
+  "endDateIso": "2026-08-01T23:00:00.000Z",
+  "timeline": [
+    {
+      "atIso": "2026-07-31T23:30:00.000Z",
+      "yesPrice": 0.45,
+      "bestBid": 0.44,
+      "bestAsk": 0.46
+    },
+    {
+      "atIso": "2026-08-02T00:00:00.000Z",
+      "yesPrice": 0.52,
+      "bestBid": 0.51,
+      "bestAsk": 0.53
+    }
+  ]
+}

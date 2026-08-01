@@ -1,0 +1,14 @@
+[
+  {
+    "address": "0xdemowalletalpha",
+    "label": "Demo Alpha",
+    "pnl": 4200,
+    "volume": 61000
+  },
+  {
+    "address": "0xdemowalletbeta",
+    "label": "Demo Beta",
+    "pnl": 2600,
+    "volume": 48000
+  }
+]

@@ -24,6 +24,7 @@ export default async function WalletDetail({ params }: { params: Promise<{ addre
           <div>Avg liquidity: {p.averageLiquidity ?? '—'}</div>
           <div>Avg spread: {p.averageSpread ?? '—'}</div>
           <div>Avg entry timing: {p.averageEntryTiming != null ? `${p.averageEntryTiming}h before resolution` : '—'}</div>
+          <div>Short-term share: {p.shortTermShare != null ? `${(p.shortTermShare * 100).toFixed(0)}%` : '—'}</div>
         </div>
         <div className="mt-2 text-sm">Copyability: {p.copyabilityScore ?? '—'} — <span className="text-[color:var(--muted)]">{p.copyabilityNotes}</span></div>
         {p.riskNotes && <div className="text-sm text-[color:var(--red)]">Risk: {p.riskNotes}</div>}

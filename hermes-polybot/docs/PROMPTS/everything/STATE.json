@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "packVersion": "2026-08-01.1",
+  "specSha256": null,
+  "cards": {
+    "00-PREFLIGHT": {"status": "pending", "prerequisites": [], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "01-RULES-HORIZON": {"status": "applied", "prerequisites": ["00-PREFLIGHT"], "revision": null, "migration": null, "verification": {"command": "runtime npm test", "result": "41 passed, 0 failed"}, "blockers": []},
+    "02-RESEARCH-INTEGRITY": {"status": "pending", "prerequisites": ["00-PREFLIGHT", "01-RULES-HORIZON"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "03-PNL-SETTLEMENT": {"status": "pending", "prerequisites": ["02-RESEARCH-INTEGRITY"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "04-RELIABILITY": {"status": "pending", "prerequisites": ["02-RESEARCH-INTEGRITY", "03-PNL-SETTLEMENT"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "05-DASHBOARD-DEPLOY": {"status": "pending", "prerequisites": ["02-RESEARCH-INTEGRITY", "03-PNL-SETTLEMENT", "04-RELIABILITY"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "06-MONTH-TRIAL": {"status": "pending", "prerequisites": ["01-RULES-HORIZON", "02-RESEARCH-INTEGRITY", "03-PNL-SETTLEMENT", "05-DASHBOARD-DEPLOY"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "07-RELEASE-ROLLBACK": {"status": "pending", "prerequisites": ["04-RELIABILITY", "05-DASHBOARD-DEPLOY"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "08-UPDATE-PROTOCOL": {"status": "pending", "prerequisites": ["07-RELEASE-ROLLBACK"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "09-FINAL-AUDIT": {"status": "pending", "prerequisites": ["00-PREFLIGHT", "01-RULES-HORIZON", "02-RESEARCH-INTEGRITY", "03-PNL-SETTLEMENT", "04-RELIABILITY", "05-DASHBOARD-DEPLOY", "06-MONTH-TRIAL", "07-RELEASE-ROLLBACK", "08-UPDATE-PROTOCOL"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "10-PREREGISTRATION": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": ["06-MONTH-TRIAL"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "RUNBOOK-01-INSTALL": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": ["00-PREFLIGHT"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "RUNBOOK-02-DB-MIGRATE": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": ["RUNBOOK-01-INSTALL"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "RUNBOOK-03-RUN-CYCLE": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": ["RUNBOOK-02-DB-MIGRATE"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "RUNBOOK-04-DASHBOARD-DEPLOY": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": ["RUNBOOK-01-INSTALL"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "RUNBOOK-05-SCHEDULER": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": ["RUNBOOK-03-RUN-CYCLE"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "RUNBOOK-06-TELEGRAM": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": ["RUNBOOK-01-INSTALL"], "revision": null, "migration": null, "verification": null, "blockers": []},
+    "RUNBOOK-07-TROUBLESHOOTING": {"status": "applied", "appliedAt": "2026-08-01", "prerequisites": [], "revision": null, "migration": null, "verification": null, "blockers": []}
+  },
+  "evidence": [
+    {"card": "01-RULES-HORIZON", "kind": "offline-test", "detail": "runtime npm test: 41 passed, 0 failed"},
+    {"card": "01-RULES-HORIZON", "kind": "mirror", "detail": "runtime/dashboard rules and horizon files mirrored"},
+    {"card": "RUNBOOK-01..07,10-PREREGISTRATION", "kind": "documents", "detail": "runbooks and preregistration card written 2026-08-01; 'applied' = documents exist, not that procedures were executed"}
+  ],
+  "globalBlockers": ["Database verification requires reachable Supabase/Postgres; no live or fabricated result allowed."]
+}

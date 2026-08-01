@@ -10,6 +10,7 @@
 
 import { getDb } from './db.ts';
 import { esc } from './telegram.ts';
+import { getSignedAccountSummary } from './readModel.ts';
 
 export interface RulesSummary {
   version: string;
@@ -94,8 +95,19 @@ export async function buildReport(ctx: ReportContext): Promise<string> {
   lines.push(`gen <b>${s?.generation ?? 0}</b> · copy <b>${s?.copyCount ?? 0}</b> · watch <b>${s?.watchCount ?? 0}</b>`);
   lines.push('');
   lines.push(`new trades (15m): <b>${s?.tradesNew15m ?? 0}</b> · (1h: <b>${s?.tradesNew1h ?? 0}</b>)`);
-  lines.push(`open positions: <b>${s?.openPositions ?? 0}</b>  (${fmtSigned(s?.openPnl ?? 0)})`);
-  lines.push(`realized 24h: <b>${fmtSigned(s?.realized24h ?? 0)}</b>`);
+  lines.push(`legacy open (frozen v1): <b>${s?.openPositions ?? 0}</b>  (${fmtSigned(s?.openPnl ?? 0)})`);
+  lines.push(`legacy realized 24h: <b>${fmtSigned(s?.realized24h ?? 0)}</b>`);
+
+  // Signed v2 paper book — the live research account.
+  try {
+    const signed = await getSignedAccountSummary(db, false);
+    if (signed.accountId != null) {
+      lines.push('');
+      lines.push(`<b>signed book</b>: open <b>${signed.openPositions}</b> · awaiting settle <b>${signed.awaitingSettlement}</b>`);
+      lines.push(`collateral: reserved <b>${signed.reservedCollateral.toFixed(2)}</b> · available <b>${signed.availableCollateral.toFixed(2)}</b>`);
+      lines.push(`signed pnl: realized <b>${fmtSigned(signed.realizedPnl)}</b> · marked <b>${fmtSigned(signed.latestUnrealizedPnl)}</b>`);
+    }
+  } catch { /* signed schema not migrated yet: omit section rather than fail the report */ }
   lines.push('');
   lines.push(`rules: <b>${esc(ctx.rules.version)}</b> · ${ctx.rules.triggered} triggered`);
   lines.push(`rescan: ${esc(ctx.rescanNote)}`);

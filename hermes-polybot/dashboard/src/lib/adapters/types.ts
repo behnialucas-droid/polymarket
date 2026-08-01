@@ -1,3 +1,4 @@
+// GENERATED FROM runtime/src/lib — DO NOT EDIT. Run: npm --prefix runtime run sync-dashboard-lib
 /** Adapter interfaces. READ-ONLY: adapters may only fetch public data.
  * No signing, no order placement, no private keys — ever. */
 
@@ -18,8 +19,16 @@ export interface WalletTrade {
   outcome?: string;
   side: 'BUY' | 'SELL';
   price: number;
+  /** Legacy provider value. Consumers must not infer whether this means shares or USDC. */
   size: number;
-  timestamp: string; // ISO
+  quantityShares?: number;
+  notionalUsd?: number;
+  providerEventId?: string;
+  transactionHash?: string;
+  assetId?: string;
+  outcomeIndex?: number;
+  timestamp: string; // provider event ISO
+  observedAt?: string; // Hermes collection ISO
   raw?: unknown;
 }
 
@@ -35,7 +44,13 @@ export interface MarketData {
   spread?: number;
   liquidity?: number;
   volume?: number;
+  /** Absolute resolution deadline (ISO). Source of truth for horizon math —
+   * timeToResolutionHours decays the moment it is stored, this does not. */
+  endDateIso?: string;
+  /** Relative hours at fetch time. Kept for backward compat; prefer endDateIso. */
   timeToResolutionHours?: number;
+  /** Event slug, e.g. "bitcoin-up-or-down-july-30" — used for short-term subject matching. */
+  slug?: string;
   resolved?: boolean;
   resolvedOutcome?: string;
   raw?: unknown;

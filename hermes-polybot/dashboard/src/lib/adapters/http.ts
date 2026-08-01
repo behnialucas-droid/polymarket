@@ -1,3 +1,4 @@
+// GENERATED FROM runtime/src/lib — DO NOT EDIT. Run: npm --prefix runtime run sync-dashboard-lib
 /**
  * HTTP client with per-host rate limiting — Foundation v2 Phase 2
  *

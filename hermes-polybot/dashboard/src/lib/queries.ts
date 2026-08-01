@@ -66,7 +66,7 @@ export async function walletRankings() {
   try {
     const sql = getDb();
     const res = await sql`SELECT "address", "label", "sourceRank", "status", "statusReason", "roi30d", "consistencyScore", "copyabilityScore",
-              "oneHitWonderPenalty", "globalScore", "bestCategory" FROM "WalletProfile" ORDER BY COALESCE("globalScore", -1) DESC, "sourceRank"`;
+              "oneHitWonderPenalty", "globalScore", "bestCategory", "shortTermShare" FROM "WalletProfile" ORDER BY COALESCE("globalScore", -1) DESC, "sourceRank"`;
     return cleanRows(res);
   } catch {
     return [];

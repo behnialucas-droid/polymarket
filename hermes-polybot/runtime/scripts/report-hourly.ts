@@ -29,13 +29,18 @@ async function main(): Promise<void> {
   const problems: string[] = [];
 
   // --- 1. Rules pass ---
+  // Default OFF: the preregistered trial evaluates a FROZEN policy. Adaptive
+  // rule updates mid-trial would invalidate preregistration (see everything/
+  // 10-PREREGISTRATION.md). Opt back in explicitly outside trial windows.
   let rulesVersion = 'v1';
   let rulesTriggered = 0;
   try {
-    const changes = await autoUpdateRules(db);
+    if (bool('RULES_AUTOUPDATE_ENABLED', false)) {
+      const changes = await autoUpdateRules(db);
+      rulesTriggered = changes.length;
+    }
     const { rules } = await getActiveRules(db);
     rulesVersion = rules.version ? `v${rules.version}` : 'v1';
-    rulesTriggered = changes.length;
   } catch (e: unknown) {
     problems.push(`rules pass error: ${redact(e)}`);
   }
@@ -110,7 +115,9 @@ async function main(): Promise<void> {
     }
   }
 
-  // --- 4. Telegram report (ALWAYS sends) ---
+  // --- 4. Telegram report (ALWAYS attempts; idempotent per 15-minute window) ---
+  // ReportRun (kind, periodKey) UNIQUE makes overlapping runners send at most
+  // once per window; every delivery attempt is recorded as evidence.
   const tz = optional('REPORT_TZ', 'UTC') ?? 'UTC';
   const reportText = await buildReport({
     rules: { version: rulesVersion, triggered: rulesTriggered },
@@ -119,12 +126,43 @@ async function main(): Promise<void> {
     tz,
   });
 
+  const windowMs = 15 * 60_000;
+  const periodKey = new Date(Math.floor(Date.now() / windowMs) * windowMs).toISOString();
+  let reportRunId: number | null = null;
   try {
-    await sendTelegram(reportText);
-    console.log('Telegram report sent successfully');
+    const runRows = await db`
+      INSERT INTO "ReportRun" ("kind", "periodKey")
+      VALUES ('hourly', ${periodKey})
+      ON CONFLICT ("kind", "periodKey") DO NOTHING
+      RETURNING "id"
+    `;
+    if (runRows.length === 0) {
+      console.log(`report window ${periodKey} already claimed — skipping duplicate send`);
+    } else {
+      reportRunId = Number(runRows[0].id);
+    }
   } catch (e: unknown) {
-    console.error('Telegram report failed:', redact(e));
-    problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
+    // Schema 009 not applied yet: report still must go out, without run identity.
+    console.warn('ReportRun unavailable, sending without idempotency:', redact(e).split('\n')[0]);
+    reportRunId = -1;
+  }
+
+  if (reportRunId !== null) {
+    try {
+      await sendTelegram(reportText);
+      console.log('Telegram report sent successfully');
+      if (reportRunId > 0) {
+        await db`INSERT INTO "ReportDelivery" ("reportRunId", "attempt", "status") VALUES (${reportRunId}, 1, 'sent')`.catch(() => {});
+        await db`UPDATE "ReportRun" SET "status" = 'sent', "finishedAt" = CURRENT_TIMESTAMP WHERE "id" = ${reportRunId}`.catch(() => {});
+      }
+    } catch (e: unknown) {
+      console.error('Telegram report failed:', redact(e));
+      problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
+      if (reportRunId > 0) {
+        await db`INSERT INTO "ReportDelivery" ("reportRunId", "attempt", "status", "error") VALUES (${reportRunId}, 1, 'failed', ${redact(e).slice(0, 500)})`.catch(() => {});
+        await db`UPDATE "ReportRun" SET "status" = 'failed', "finishedAt" = CURRENT_TIMESTAMP WHERE "id" = ${reportRunId}`.catch(() => {});
+      }
+    }
   }
 
   // --- 5. Heartbeat record for hourly ---

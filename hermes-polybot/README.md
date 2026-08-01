@@ -39,7 +39,7 @@ Requires Node.js >= 22.6.
 cd dashboard
 npm install
 cp ../.env.example .env
-npm run dev           # dashboard at http://localhost:3000
+npm run dev           # dashboard at http://localhost:4000
 ```
 
 ## Setup — Automation (GitHub Actions)

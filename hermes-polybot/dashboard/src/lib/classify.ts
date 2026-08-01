@@ -1,3 +1,4 @@
+// GENERATED FROM runtime/src/lib — DO NOT EDIT. Run: npm --prefix runtime run sync-dashboard-lib
 /**
  * Wallet Classification — Foundation v2 Phase 4 §6.7
  *
@@ -30,6 +31,8 @@ export interface ClassificationProfileInput {
   daysSinceLastTrade: number;
   oneHitWonderFlag: boolean;
   topTradePnlShare: number;
+  /** Fraction of 30d trades committed for <= the short-term ceiling (0..1). */
+  shortTermShare: number;
 }
 
 /**
@@ -68,6 +71,7 @@ export function classify(
     [p.consistency >= 0.55, `consistency ${p.consistency.toFixed(2)} < 0.55`],
     [p.maxDrawdown30d <= 0.35, `drawdown ${(p.maxDrawdown30d * 100).toFixed(0)}% > 35%`],
     [p.daysSinceLastTrade <= 7, `last trade ${p.daysSinceLastTrade}d ago`],
+    [p.shortTermShare >= 0.5, `short-term share ${(p.shortTermShare * 100).toFixed(0)}% < 50%`],
   ];
 
   for (const [ok, why] of gates) {

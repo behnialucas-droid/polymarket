@@ -23,6 +23,10 @@ const SECRET_PATTERNS: RegExp[] = [
   /\b[A-Z0-9]{20}(?=[^A-Z]|$)/g,                 // AWS access key IDs
   /\b[A-Za-z0-9+/]{40}\b/g,                      // AWS secret keys (approximate)
   /-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----/g,
+  // 32-byte hex — the shape of an EVM private key or seed. This system never handles
+  // keys, so any such string in output is either an accident or an attack; redact it.
+  // It also catches SHA-256 trade hashes, which is a fine price for the guarantee.
+  /\b(0x)?[a-fA-F0-9]{64}\b/g,
 ];
 
 /** Live secret values to scrub from output (populated lazily at first use). */

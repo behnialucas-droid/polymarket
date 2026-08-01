@@ -1,0 +1,27 @@
+{
+  "category": "crypto",
+  "volume": 60000,
+  "marketId": "demo-btc-up-aug1",
+  "conditionId": "cond-demo-btc-aug1",
+  "question": "Bitcoin up on Aug 1? (demo)",
+  "slug": "bitcoin-up-or-down-august-1",
+  "liquidity": 25000,
+  "endDateIso": "2026-08-01T12:00:00.000Z",
+  "timeline": [
+    {
+      "atIso": "2026-07-31T23:30:00.000Z",
+      "yesPrice": 0.55,
+      "bestBid": 0.54,
+      "bestAsk": 0.56
+    },
+    {
+      "atIso": "2026-08-01T12:30:00.000Z",
+      "yesPrice": 0.99,
+      "bestBid": 0.99,
+      "bestAsk": 1,
+      "resolved": true,
+      "resolvedOutcome": "Yes",
+      "umaResolutionStatus": "resolved"
+    }
+  ]
+}

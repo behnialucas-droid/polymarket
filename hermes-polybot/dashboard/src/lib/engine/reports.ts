@@ -1,3 +1,4 @@
+// GENERATED FROM runtime/src/lib — DO NOT EDIT. Run: npm --prefix runtime run sync-dashboard-lib
 /** Daily report generation + optional Telegram send (env-gated, token redacted). */
 import type postgres from 'postgres';
 import { computeBenchmarks } from './paperTrading.ts';

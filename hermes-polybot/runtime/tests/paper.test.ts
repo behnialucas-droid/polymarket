@@ -8,7 +8,8 @@ import type { WalletTrade, MarketData, DataAdapter } from '../src/lib/adapters/t
 
 const db = getDb();
 const trade: WalletTrade = { walletAddress: '0xw', marketId: 'm1', outcome: 'YES', side: 'BUY', price: 0.5, size: 100, timestamp: new Date().toISOString(), marketCategory: 'politics' };
-const market: MarketData = { marketId: 'm1', yesPrice: 0.5, noPrice: 0.5, spread: 0.02, liquidity: 20000, timeToResolutionHours: 50, resolved: false };
+// Short-term fixture: resolves 6h out, inside the 24h copy ceiling.
+const market: MarketData = { marketId: 'm1', yesPrice: 0.5, noPrice: 0.5, spread: 0.02, liquidity: 20000, endDateIso: new Date(Date.now() + 6 * 3.6e6).toISOString(), timeToResolutionHours: 6, resolved: false };
 const wallet = { globalScore: 0.8, roi30d: 0.3, consistencyScore: 0.8, copyabilityScore: 0.8, bestCategory: 'politics', categoryStrengths: { politics: 0.9 } };
 
 async function journalRow(decision = 'paper_copy'): Promise<number> {
@@ -74,9 +75,13 @@ test('outcome review resolves winners at $1 and writes OutcomeReview', async () 
 });
 
 test('benchmark comparison: bot vs blind copy vs skip buckets', async () => {
-  const ot = await db`INSERT INTO "ObservedTrade" ("walletAddress", "marketId", "outcome", "side", "walletEntryPrice", "size", "timestamp") VALUES ('0xw','m2','YES','BUY',0.4,100,'2026-01-01') RETURNING "id"`;
+  const ot = await db`INSERT INTO "ObservedTrade" ("walletAddress", "marketId", "conditionId", "outcome", "side", "walletEntryPrice", "size", "timestamp") VALUES ('0xw','m2','cond-m2','YES','BUY',0.4,100,'2026-01-01') RETURNING "id"`;
   await db`INSERT INTO "DecisionJournal" ("observedTradeId", "walletAddress", "marketId", "decision") VALUES (${ot[0].id},'0xw','m2','skip')`;
-  await db`INSERT INTO "MarketSnapshot" ("marketId", "collectedAt", "rawMarketJson") VALUES ('m2','2026-01-01','{"resolvedOutcome":"YES"}')`;
+  await db`
+    INSERT INTO "MarketResolutionEvidence" ("marketId", "conditionId", "resolvedOutcome", "status", "resolutionSource")
+    VALUES ('m2', 'cond-m2', 'YES', 'confirmed', 'uma')
+    ON CONFLICT DO NOTHING
+  `;
   const b = await computeBenchmarks(db);
   assert.ok(b.skipped.trades >= 1);
   assert.ok(b.missedWinners >= 1);
@@ -87,4 +92,5 @@ test('benchmark comparison: bot vs blind copy vs skip buckets', async () => {
   await db`DELETE FROM "PaperTrade" WHERE "walletAddress" IN ('0xbad', '0xw')`;
   await db`DELETE FROM "DecisionJournal" WHERE "walletAddress" IN ('0xbad', '0xw')`;
   await db`DELETE FROM "ObservedTrade" WHERE "walletAddress" IN ('0xbad', '0xw')`;
+  await db`DELETE FROM "MarketResolutionEvidence" WHERE "conditionId" = 'cond-m2'`;
 });

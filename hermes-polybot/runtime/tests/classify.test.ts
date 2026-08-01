@@ -17,6 +17,7 @@ const BASE_PROFILE: ClassificationProfileInput = {
   daysSinceLastTrade: 2,
   oneHitWonderFlag: false,
   topTradePnlShare: 0.15,
+  shortTermShare: 0.8,
 };
 
 test('classify — pure function determinism (100 runs over fixed input)', () => {

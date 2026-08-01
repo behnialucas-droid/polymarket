@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes Polybot 15-Minute Cycle & Telegram Report
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/nima/Documents/claude.app/polymarket-repo/hermes-polybot/runtime
+EnvironmentFile=/home/nima/Documents/claude.app/polymarket-repo/hermes-polybot/runtime/.env
+ExecStart=/usr/local/bin/node --experimental-strip-types scripts/cycle.ts
+ExecStartPost=/usr/local/bin/node --experimental-strip-types scripts/report-hourly.ts
+SuccessExitStatus=0 1
+User=nima
+
+[Install]
+WantedBy=multi-user.target
