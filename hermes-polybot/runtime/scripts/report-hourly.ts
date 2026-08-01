@@ -129,19 +129,9 @@ async function main(): Promise<void> {
 
   const windowMs = 15 * 60_000;
   const periodKey = new Date(Math.floor(Date.now() / windowMs) * windowMs).toISOString();
+  let claim;
   try {
-    const claim = await claimReportRun(db, 'hourly', periodKey);
-    if (!claim) {
-      console.log(`report window ${periodKey} already sent or is actively sending — skipping duplicate send`);
-    } else {
-      try {
-        await deliverClaimedReport(db, claim, () => sendTelegram(reportText));
-        console.log('Telegram report sent successfully');
-      } catch (e: unknown) {
-        console.error('Telegram report failed:', redact(e));
-        problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
-      }
-    }
+    claim = await claimReportRun(db, 'hourly', periodKey);
   } catch (e: unknown) {
     console.warn('ReportRun unavailable, sending without idempotency:', redact(e).split('\n')[0]);
     try {
@@ -150,6 +140,18 @@ async function main(): Promise<void> {
     } catch (sendError: unknown) {
       console.error('Telegram report failed:', redact(sendError));
       problems.push(`Telegram send failed: ${redact(sendError).split('\n')[0].slice(0, 100)}`);
+    }
+  }
+
+  if (claim === null) {
+    console.log(`report window ${periodKey} already sent or is actively sending — skipping duplicate send`);
+  } else if (claim) {
+    try {
+      await deliverClaimedReport(db, claim, () => sendTelegram(reportText));
+      console.log('Telegram report sent successfully');
+    } catch (e: unknown) {
+      console.error('Telegram report failed:', redact(e));
+      problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
     }
   }
 
