@@ -128,10 +128,15 @@ export async function withDbRetry<T>(
 
 export async function migrate(d: postgres.Sql): Promise<void> {
   const dir = join(ROOT, 'db', 'migrations');
-  for (const f of readdirSync(dir).sort()) {
-    if (f.endsWith('.sql')) {
-      const query = readFileSync(join(dir, f), 'utf8');
-      await d.unsafe(query);
+  const sql = await d.reserve();
+  try {
+    for (const f of readdirSync(dir).sort()) {
+      if (f.endsWith('.sql')) {
+        const query = readFileSync(join(dir, f), 'utf8');
+        await sql.unsafe(query);
+      }
     }
+  } finally {
+    sql.release();
   }
 }
