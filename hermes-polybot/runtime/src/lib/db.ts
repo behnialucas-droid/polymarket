@@ -130,10 +130,28 @@ export async function migrate(d: postgres.Sql): Promise<void> {
   const dir = join(ROOT, 'db', 'migrations');
   const sql = await d.reserve();
   try {
+    await sql.unsafe(`
+      CREATE TABLE IF NOT EXISTS "SchemaMigration" (
+        "id"          SERIAL PRIMARY KEY,
+        "version"     TEXT NOT NULL UNIQUE,
+        "appliedAt"   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "description" TEXT
+      );
+    `);
+
+    const rows = await sql<{ version: string }[]>`SELECT "version" FROM "SchemaMigration"`;
+    const applied = new Set(rows.map((r) => r.version));
+
     for (const f of readdirSync(dir).sort()) {
       if (f.endsWith('.sql')) {
+        const version = f.split('_')[0];
+        if (applied.has(version)) {
+          continue;
+        }
+        console.log(`Applying migration ${f}...`);
         const query = readFileSync(join(dir, f), 'utf8');
         await sql.unsafe(query);
+        await sql`INSERT INTO "SchemaMigration" ("version", "description") VALUES (${version}, ${f}) ON CONFLICT ("version") DO NOTHING`;
       }
     }
   } finally {

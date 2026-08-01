@@ -11,6 +11,7 @@ import { buildSignedRequest } from '../src/lib/engine/signedRequest.ts';
 import { applySignedPaperLedgerActionInTransaction, getSignedPaperAccount } from '../src/lib/engine/signedPaperLedgerDb.ts';
 import { hoursToResolution } from '../src/lib/engine/horizon.ts';
 import type { MarketData } from '../src/lib/adapters/types.ts';
+import { num } from '../src/lib/env.ts';
 
 function marketFromSnapshot(snapshot: any): MarketData {
   const raw = typeof snapshot.rawMarketJson === 'string' ? JSON.parse(snapshot.rawMarketJson) : {};
@@ -244,8 +245,12 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
   const riskLimits = await loadActiveRiskLimits(db);
   const costParams = await loadActiveCostModelParams(db);
   const signedAccountId = await getSignedPaperAccount(db, adapter.isDemo);
+  const batchSize = Math.max(1, Math.min(10000, num('TRADE_SCORE_BATCH_SIZE', 500)));
   const unscored = await db`
-    SELECT ot.* FROM "ObservedTrade" ot WHERE NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
+    SELECT ot.* FROM "ObservedTrade" ot
+    WHERE NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
+    ORDER BY ot."id" ASC
+    LIMIT ${batchSize}
   `;
   let copied = 0;
   for (const ot of unscored) {
