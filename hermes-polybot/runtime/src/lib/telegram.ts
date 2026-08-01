@@ -41,18 +41,27 @@ async function sendOne(
   silent: boolean,
 ): Promise<void> {
   for (let attempt = 1; attempt <= 4; attempt++) {
-    const res = await fetch(`${API}/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-        disable_notification: silent,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API}/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          disable_notification: silent,
+        }),
+      });
+    } catch (error: unknown) {
+      if (attempt < 4) {
+        await sleep(1_000 * 2 ** (attempt - 1));
+        continue;
+      }
+      throw new Error(`telegram send failed after 4 attempts: ${redact(error)}`);
+    }
 
     if (res.ok) return;
 

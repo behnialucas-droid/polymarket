@@ -22,6 +22,7 @@ import { buildReport } from '../src/lib/report.ts';
 import { autoUpdateRules, getActiveRules } from '../src/lib/engine/rules.ts';
 import { isRescanDue, openGeneration, dispatchRescan } from '../src/lib/rescan.ts';
 import { redact, num, optional, bool } from '../src/lib/env.ts';
+import { claimReportRun, deliverClaimedReport } from '../src/lib/reporting.ts';
 
 async function main(): Promise<void> {
   const t0 = Date.now();
@@ -128,40 +129,27 @@ async function main(): Promise<void> {
 
   const windowMs = 15 * 60_000;
   const periodKey = new Date(Math.floor(Date.now() / windowMs) * windowMs).toISOString();
-  let reportRunId: number | null = null;
   try {
-    const runRows = await db`
-      INSERT INTO "ReportRun" ("kind", "periodKey")
-      VALUES ('hourly', ${periodKey})
-      ON CONFLICT ("kind", "periodKey") DO NOTHING
-      RETURNING "id"
-    `;
-    if (runRows.length === 0) {
-      console.log(`report window ${periodKey} already claimed — skipping duplicate send`);
+    const claim = await claimReportRun(db, 'hourly', periodKey);
+    if (!claim) {
+      console.log(`report window ${periodKey} already sent or is actively sending — skipping duplicate send`);
     } else {
-      reportRunId = Number(runRows[0].id);
+      try {
+        await deliverClaimedReport(db, claim, () => sendTelegram(reportText));
+        console.log('Telegram report sent successfully');
+      } catch (e: unknown) {
+        console.error('Telegram report failed:', redact(e));
+        problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
+      }
     }
   } catch (e: unknown) {
-    // Schema 009 not applied yet: report still must go out, without run identity.
     console.warn('ReportRun unavailable, sending without idempotency:', redact(e).split('\n')[0]);
-    reportRunId = -1;
-  }
-
-  if (reportRunId !== null) {
     try {
       await sendTelegram(reportText);
       console.log('Telegram report sent successfully');
-      if (reportRunId > 0) {
-        await db`INSERT INTO "ReportDelivery" ("reportRunId", "attempt", "status") VALUES (${reportRunId}, 1, 'sent')`.catch(() => {});
-        await db`UPDATE "ReportRun" SET "status" = 'sent', "finishedAt" = CURRENT_TIMESTAMP WHERE "id" = ${reportRunId}`.catch(() => {});
-      }
-    } catch (e: unknown) {
-      console.error('Telegram report failed:', redact(e));
-      problems.push(`Telegram send failed: ${redact(e).split('\n')[0].slice(0, 100)}`);
-      if (reportRunId > 0) {
-        await db`INSERT INTO "ReportDelivery" ("reportRunId", "attempt", "status", "error") VALUES (${reportRunId}, 1, 'failed', ${redact(e).slice(0, 500)})`.catch(() => {});
-        await db`UPDATE "ReportRun" SET "status" = 'failed', "finishedAt" = CURRENT_TIMESTAMP WHERE "id" = ${reportRunId}`.catch(() => {});
-      }
+    } catch (sendError: unknown) {
+      console.error('Telegram report failed:', redact(sendError));
+      problems.push(`Telegram send failed: ${redact(sendError).split('\n')[0].slice(0, 100)}`);
     }
   }
 

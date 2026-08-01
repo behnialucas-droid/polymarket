@@ -1,8 +1,7 @@
 // GENERATED FROM runtime/src/lib — DO NOT EDIT. Run: npm --prefix runtime run sync-dashboard-lib
-/** Daily report generation + optional Telegram send (env-gated, token redacted). */
+/** Daily report generation over recorded paper data. */
 import type postgres from 'postgres';
 import { computeBenchmarks } from './paperTrading.ts';
-import { redact } from '../env.ts';
 
 export interface DailyReportData {
   date: string;
@@ -98,24 +97,4 @@ export async function saveDailyReport(db: postgres.Sql, r: DailyReportData, sent
       "bestWalletsJson"=EXCLUDED."bestWalletsJson", "worstWalletsJson"=EXCLUDED."worstWalletsJson", "ruleChangesJson"=EXCLUDED."ruleChangesJson",
       "summary"=EXCLUDED."summary", "sentToTelegram"=EXCLUDED."sentToTelegram"
   `;
-}
-
-/** Send via Telegram if configured; otherwise print. Never logs the token. */
-export async function sendTelegram(text: string): Promise<boolean> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) {
-    console.log('[telegram not configured — printing report]\n' + redact(text));
-    return false;
-  }
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(redact(`Telegram send failed: HTTP ${res.status} ${body.slice(0, 300)}`));
-  }
-  return true;
 }
