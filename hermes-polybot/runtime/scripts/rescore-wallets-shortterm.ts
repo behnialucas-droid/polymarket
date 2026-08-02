@@ -11,7 +11,7 @@
  * never rank. If fewer than the target qualify, the shortfall is reported, never
  * padded with unproven wallets.
  */
-import { getDb } from '../src/lib/db.ts';
+import { getDb, withDbRetry } from '../src/lib/db.ts';
 import { getAdapter } from '../src/lib/adapters/index.ts';
 import type { TradeWithMarket } from '../src/lib/engine/walletScoring.ts';
 import {
@@ -22,7 +22,6 @@ import {
 import { num } from '../src/lib/env.ts';
 import { since30d } from './pipeline.ts';
 
-const db = getDb();
 const adapter = getAdapter();
 
 const config = {
@@ -34,21 +33,25 @@ const universeSize = Math.max(1, num('WALLET_UNIVERSE_SIZE', 500));
 const rescoreLimit = Math.max(1, num('WALLET_RESCORE_LIMIT', 1000));
 
 try {
-  const epochRows = await db`
-    INSERT INTO "ScoringEpoch" ("criteriaJson", "notes", "active")
-    VALUES (${JSON.stringify({ kind: 'short-term-only', ...config, universeSize })},
-            ${'short-term rebuild via rescore-wallets-shortterm.ts'}, FALSE)
-    RETURNING "id"
-  `;
-  const epochId = Number(epochRows[0].id);
+  const epochId = await withDbRetry(async (db) => {
+    const epochRows = await db`
+      INSERT INTO "ScoringEpoch" ("criteriaJson", "notes", "active")
+      VALUES (${JSON.stringify({ kind: 'short-term-only', ...config, universeSize })},
+              ${'short-term rebuild via rescore-wallets-shortterm.ts'}, FALSE)
+      RETURNING "id"
+    `;
+    return Number(epochRows[0].id);
+  }, 'create-scoring-epoch');
   console.log(`created candidate ScoringEpoch ${epochId} (inactive) — criteria: <=${config.maxHours}h, min ${config.minTrades} resolved trades, half-life ${config.recencyHalfLifeDays}d`);
 
-  const wallets = await db`
-    SELECT "address" FROM "WalletProfile"
-    WHERE "isDemo" = ${adapter.isDemo ? 1 : 0}
-    ORDER BY "sourceRank" ASC NULLS LAST, "address" ASC
-    LIMIT ${rescoreLimit}
-  `;
+  const wallets = await withDbRetry(async (db) => {
+    return await db`
+      SELECT "address" FROM "WalletProfile"
+      WHERE "isDemo" = ${adapter.isDemo ? 1 : 0}
+      ORDER BY "sourceRank" ASC NULLS LAST, "address" ASC
+      LIMIT ${rescoreLimit}
+    `;
+  }, 'fetch-wallets-rescore');
   console.log(`rescoring ${wallets.length} wallets (${adapter.source}${adapter.isDemo ? ' DEMO' : ''})`);
 
   const scoringTimeMs = Date.now();
@@ -87,18 +90,20 @@ try {
     }
 
     const s = scoreShortTermWallet(items, scoringTimeMs, config);
-    await db`
-      UPDATE "WalletProfile" SET
-        "scoringEpoch" = ${epochId},
-        "shortTermTradeCount" = ${s.shortTermTradeCount},
-        "shortTermWinRate" = ${s.shortTermWinRate},
-        "shortTermPnlPerDollar" = ${s.shortTermPnlPerDollar},
-        "shortTermRecencyWeight" = ${s.shortTermRecencyWeight},
-        "shortTermCopyScore" = ${s.shortTermCopyScore},
-        "shortTermRank" = NULL,
-        "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "address" = ${w.address}
-    `;
+    await withDbRetry(async (db) => {
+      await db`
+        UPDATE "WalletProfile" SET
+          "scoringEpoch" = ${epochId},
+          "shortTermTradeCount" = ${s.shortTermTradeCount},
+          "shortTermWinRate" = ${s.shortTermWinRate},
+          "shortTermPnlPerDollar" = ${s.shortTermPnlPerDollar},
+          "shortTermRecencyWeight" = ${s.shortTermRecencyWeight},
+          "shortTermCopyScore" = ${s.shortTermCopyScore},
+          "shortTermRank" = NULL,
+          "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "address" = ${w.address}
+      `;
+    }, 'update-wallet-profile');
     scored++;
     if (s.valid && s.shortTermCopyScore != null) {
       qualified.push({ address: w.address, shortTermCopyScore: s.shortTermCopyScore });
@@ -110,10 +115,12 @@ try {
 
   const top = selectTopWallets(qualified, universeSize);
   for (let i = 0; i < top.length; i++) {
-    await db`
-      UPDATE "WalletProfile" SET "shortTermRank" = ${i + 1}, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "address" = ${top[i].address} AND "scoringEpoch" = ${epochId}
-    `;
+    await withDbRetry(async (db) => {
+      await db`
+        UPDATE "WalletProfile" SET "shortTermRank" = ${i + 1}, "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "address" = ${top[i].address} AND "scoringEpoch" = ${epochId}
+      `;
+    }, 'update-shortterm-rank');
   }
 
   console.log(`epoch ${epochId} summary:`);
