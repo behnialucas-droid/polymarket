@@ -68,3 +68,20 @@ wallets. The universe grows as more short-term resolutions accumulate.
 - Sub-minimum sample ⇒ `copyScore = NULL` (fail-closed).
 - Recency decay is monotonic; losses score below wins.
 - Top-N is deterministic and hard-truncated.
+
+## Signal freshness and decision-time quotes (fix commit 0b32f21)
+
+- **Observation follows the active epoch**: `monitorTrades` watches the ranked
+  epoch universe (rank order) when an epoch is active; legacy status selection
+  applies only when none is active.
+- **Copy signals expire**: `evaluateSignalFreshness` (default `MAX_SIGNAL_AGE_MIN`
+  = 20) gates every decision. Missing/unparsable/future timestamps fail closed.
+  A stale signal journals a durable skip and is NEVER re-quoted.
+- **Decision-time snapshot refresh** applies to FRESH signals only: if the
+  persisted snapshot is missing/older than 60s, the pipeline fetches and
+  persists the decision-time quote — that quote IS the decision evidence.
+  Old signals never trigger a refetch (no lookahead).
+- **Horizon contract**: rules can never set `maxTimeToResolutionHours` above 24.
+- **Activation guards**: refuses demo/live ranked-wallet mode mismatch (override
+  `EPOCH_ALLOW_MODE_MISMATCH=yes`), warns when the universe is thin (<25) or
+  P90 score sits below `minWalletGlobalScore`.
