@@ -236,22 +236,56 @@ export async function monitorTrades(db: postgres.Sql, adapter: DataAdapter): Pro
   return newCount;
 }
 
+export interface FunnelMetrics {
+  observed: number;
+  validSnapshot: number;
+  horizonGatePassed: number;
+  walletGatePassed: number;
+  paperCopy: number;
+  admitted: number;
+}
+
 /** Score unscored trades from immutable market evidence; never refetch current market state.
  * An admitted paper_copy flows into the signed v2 ledger inside the SAME transaction as
  * its journal and admission evidence. Legacy long-only PaperTrade/PaperLedger is frozen
  * history and is no longer written by this pipeline. */
-export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Promise<{ scored: number; copied: number }> {
+export async function scoreNewTrades(
+  db: postgres.Sql,
+  adapter: DataAdapter,
+): Promise<{ scored: number; copied: number; funnel: FunnelMetrics }> {
   const { rules } = await getActiveRules(db);
   const riskLimits = await loadActiveRiskLimits(db);
   const costParams = await loadActiveCostModelParams(db);
   const signedAccountId = await getSignedPaperAccount(db, adapter.isDemo);
   const batchSize = Math.max(1, Math.min(10000, num('TRADE_SCORE_BATCH_SIZE', 500)));
-  const unscored = await db`
-    SELECT ot.* FROM "ObservedTrade" ot
-    WHERE NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
-    ORDER BY ot."id" ASC
-    LIMIT ${batchSize}
-  `;
+
+  const baselines = await db`SELECT "baselineAt" FROM "PaperBaseline" WHERE "active" = TRUE LIMIT 1`;
+  const activeBaselineAt = baselines[0]?.baselineAt ?? null;
+
+  const unscored = activeBaselineAt
+    ? await db`
+        SELECT ot.* FROM "ObservedTrade" ot
+        WHERE COALESCE(ot."observedAt"::timestamp, ot."createdAt") >= ${activeBaselineAt}
+          AND NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
+        ORDER BY ot."id" ASC
+        LIMIT ${batchSize}
+      `
+    : await db`
+        SELECT ot.* FROM "ObservedTrade" ot
+        WHERE NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
+        ORDER BY ot."id" ASC
+        LIMIT ${batchSize}
+      `;
+
+  const funnel: FunnelMetrics = {
+    observed: unscored.length,
+    validSnapshot: 0,
+    horizonGatePassed: 0,
+    walletGatePassed: 0,
+    paperCopy: 0,
+    admitted: 0,
+  };
+
   let copied = 0;
   for (const ot of unscored) {
     const wpList = await db`SELECT * FROM "WalletProfile" WHERE "address" = ${ot.walletAddress}`;
@@ -271,6 +305,7 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
       globalScore: Number(wp.globalScore), roi30d: Number(wp.roi30d ?? 0), consistencyScore: Number(wp.consistencyScore ?? 0),
       copyabilityScore: Number(wp.copyabilityScore ?? 0), bestCategory: wp.bestCategory,
       categoryStrengths: JSON.parse(wp.categoryStrengthsJson ?? '{}'),
+      shortTermShare: Number(wp.shortTermShare ?? 0),
     } : null;
 
     const journal = await db.begin(async (tx) => {
@@ -303,6 +338,15 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
         return { decision: 'skip' as const, journalId: Number(res[0].id), opened: false };
       }
 
+      funnel.validSnapshot++;
+      const market = marketFromSnapshot(snapshot);
+      const horizonHours = hoursToResolution(market, decisionAt.getTime());
+      const horizonPass = horizonHours !== undefined && horizonHours > 0 && horizonHours <= (rules.maxTimeToResolutionHours ?? 24);
+      if (horizonPass) funnel.horizonGatePassed++;
+
+      const walletPass = Boolean(wallet && wallet.globalScore >= rules.minWalletGlobalScore && wallet.shortTermShare >= rules.minShortTermShare);
+      if (walletPass) funnel.walletGatePassed++;
+
       if (!wallet) {
         const reason = 'wallet profile is missing or has no global score at decision time';
         const res = await tx`
@@ -317,7 +361,6 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
         return { decision: 'skip' as const, journalId: Number(res[0].id), opened: false };
       }
 
-      const market = marketFromSnapshot(snapshot);
       const d = scoreTrade(trade, market, wallet, rules, decisionAt.getTime());
       const res = await tx`
         INSERT INTO "DecisionJournal" ("observedTradeId", "walletAddress", "marketId", "decision", "copyScore", "confidence", "reasonsJson", "risksJson",
@@ -333,6 +376,7 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
       if (d.decision !== 'paper_copy') {
         return { decision: d.decision, journalId, opened: false };
       }
+      funnel.paperCopy++;
 
       // Risk admission + signed ledger, same transaction as the journal.
       const requestedNotional = d.simulatedPositionSize;
@@ -416,9 +460,12 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
       return { decision: d.decision, journalId, opened: !ledgerResult.duplicate };
     });
 
-    if (journal.opened) copied++;
+    if (journal.opened) {
+      copied++;
+      funnel.admitted++;
+    }
   }
-  return { scored: unscored.length, copied };
+  return { scored: unscored.length, copied, funnel };
 }
 
 export { getAdapter };

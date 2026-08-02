@@ -70,7 +70,7 @@ async function main(): Promise<void> {
     );
 
     // --- 3. Score new trades ---
-    const { scored, copied } = await withDbRetry(
+    const { scored, copied, funnel } = await withDbRetry(
       (db) => scoreNewTrades(db, adapter),
       'scoreNewTrades',
     );
@@ -101,11 +101,11 @@ async function main(): Promise<void> {
     );
 
     const durationMs = Date.now() - t0;
-    const summary = `observed:${observed} scored:${scored} copied:${copied} pnl:${pnlUpdated} marked:${marked} resolved:${resolved} evidence:${evidenced} settled:${settled} timing:${durationMs}ms`;
+    const summary = `observed:${observed} scored:${scored} copied:${copied} funnel:[validSnap:${funnel?.validSnapshot ?? 0}, horizonPass:${funnel?.horizonGatePassed ?? 0}, walletPass:${funnel?.walletGatePassed ?? 0}, admitted:${funnel?.admitted ?? 0}] pnl:${pnlUpdated} marked:${marked} resolved:${resolved} evidence:${evidenced} settled:${settled} timing:${durationMs}ms`;
     console.log(summary);
 
     await heartbeat('cycle', true, null, {
-      observed, scored, copied, pnlUpdated, marked, resolved, evidenced, settled, durationMs
+      observed, scored, copied, funnel, pnlUpdated, marked, resolved, evidenced, settled, durationMs
     });
   } catch (e: unknown) {
     const errStr = redact(e);
