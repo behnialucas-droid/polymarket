@@ -61,7 +61,10 @@ export function normalizeRules(raw: unknown): Rules {
     minCopyScore: finiteFraction(input.minCopyScore, DEFAULT_RULES.minCopyScore),
     minWatchScore: finiteFraction(input.minWatchScore, DEFAULT_RULES.minWatchScore),
     minResolvedTrades: Math.max(0, Math.floor(finitePositive(input.minResolvedTrades, DEFAULT_RULES.minResolvedTrades, 100_000))),
-    maxTimeToResolutionHours: finitePositive(input.maxTimeToResolutionHours, DEFAULT_RULES.maxTimeToResolutionHours, 48),
+    // Hard architecture contract: the copy horizon can never exceed 24h. A rule
+    // update (manual or automated) that asks for more silently drifts the whole
+    // system back toward long-term markets, so the cap is the contract itself.
+    maxTimeToResolutionHours: finitePositive(input.maxTimeToResolutionHours, DEFAULT_RULES.maxTimeToResolutionHours, 24),
     minShortTermShare: finiteFraction(input.minShortTermShare, DEFAULT_RULES.minShortTermShare),
     weights: {
       roi: finiteFraction((weights as Partial<Rules['weights']>).roi, DEFAULT_RULES.weights.roi),

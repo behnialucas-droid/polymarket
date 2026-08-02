@@ -4,7 +4,7 @@ import { getAdapter, type DataAdapter } from '../src/lib/adapters/index.ts';
 import { scoreWallet, walletStatus, type TradeWithMarket } from '../src/lib/engine/walletScoring.ts';
 import { scoreTrade } from '../src/lib/engine/tradeScoring.ts';
 import { getActiveRules } from '../src/lib/engine/rules.ts';
-import { evaluateDecisionEvidence, type DecisionSnapshotEvidence } from '../src/lib/engine/decisionEvidence.ts';
+import { evaluateDecisionEvidence, evaluateSignalFreshness, MAX_DECISION_SNAPSHOT_AGE_MS, MAX_SIGNAL_AGE_MS_DEFAULT, type DecisionSnapshotEvidence } from '../src/lib/engine/decisionEvidence.ts';
 import { evaluateAdmission } from '../src/lib/engine/admission.ts';
 import { loadActiveCostModelParams, loadActiveRiskLimits, loadPortfolioState, recordAdmissionCheck } from '../src/lib/engine/admissionDb.ts';
 import { buildSignedRequest } from '../src/lib/engine/signedRequest.ts';
@@ -121,12 +121,24 @@ export async function profileWallet(db: postgres.Sql, adapter: DataAdapter, addr
 export async function monitorTrades(db: postgres.Sql, adapter: DataAdapter): Promise<number> {
   const { createHash } = await import('node:crypto');
   const scanLimit = Number(process.env.WALLET_SCAN_LIMIT ?? 500);
-  const tracked = await db`
-    SELECT "address" FROM "WalletProfile"
-    WHERE "memoryStatus" IN ('copy','watch') OR "status" IN ('track','watch','copy')
-    ORDER BY "lastScannedAt" ASC NULLS FIRST
-    LIMIT ${scanLimit}
-  `;
+  // Observation follows the ACTIVE scoring epoch: when one exists, watch the
+  // epoch-ranked universe (rank order = score order), otherwise the legacy
+  // status-driven set. Without this, the pipeline keeps observing legacy
+  // long-term wallets whose signals the epoch gate then rejects — zero copies.
+  const monitorEpochId = await loadActiveScoringEpoch(db);
+  const tracked = monitorEpochId != null
+    ? await db`
+        SELECT "address" FROM "WalletProfile"
+        WHERE "scoringEpoch" = ${monitorEpochId} AND "shortTermRank" IS NOT NULL
+        ORDER BY "shortTermRank" ASC
+        LIMIT ${scanLimit}
+      `
+    : await db`
+        SELECT "address" FROM "WalletProfile"
+        WHERE "memoryStatus" IN ('copy','watch') OR "status" IN ('track','watch','copy')
+        ORDER BY "lastScannedAt" ASC NULLS FIRST
+        LIMIT ${scanLimit}
+      `;
   if (tracked.length === 0) return 0;
 
   // Pre-calculate HWM timestamps for all tracked wallets in a single query
@@ -248,6 +260,54 @@ export async function loadActiveScoringEpoch(db: postgres.Sql): Promise<number |
   }
 }
 
+/** Decision-time snapshot refresh for LIVE signals only.
+ *
+ * The no-lookahead contract forbids pricing an OLD signal with TODAY's quote.
+ * It does not forbid collecting the decision-time quote for a signal being
+ * decided right now — that quote IS the decision evidence. Callers must gate on
+ * signal freshness BEFORE calling this. If the latest persisted snapshot is
+ * already fresh enough, nothing is fetched. Fetch failures are swallowed: the
+ * evidence evaluator then fails closed with a durable MISSING/STALE skip. */
+export async function refreshDecisionSnapshot(
+  db: postgres.Sql,
+  adapter: DataAdapter,
+  marketId: string,
+  decisionAt: Date,
+): Promise<void> {
+  const latest = await db`
+    SELECT "quoteCollectedAt" FROM "MarketSnapshot"
+    WHERE "marketId" = ${marketId}
+    ORDER BY "quoteCollectedAt" DESC NULLS LAST, "id" DESC
+    LIMIT 1
+  `;
+  const at = latest[0]?.quoteCollectedAt ? new Date(latest[0].quoteCollectedAt).getTime() : NaN;
+  const ageMs = decisionAt.getTime() - at;
+  if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= MAX_DECISION_SNAPSHOT_AGE_MS) return;
+
+  let m: MarketData;
+  try {
+    m = await adapter.fetchMarket(marketId);
+  } catch {
+    return; // fail closed downstream: evidence evaluator records the skip
+  }
+  const quoteCollectedAt = new Date().toISOString();
+  await db`
+    INSERT INTO "MarketSnapshot" (
+      "marketId", "conditionId", "question", "category", "yesPrice", "noPrice",
+      "bestBid", "bestAsk", "spread", "liquidity", "volume", "timeToResolution", "endDate",
+      "collectedAt", "quoteCollectedAt", "rawMarketJson", "isDemo"
+    )
+    VALUES (
+      ${m.marketId}, ${m.conditionId ?? null}, ${m.question ?? null}, ${m.category ?? null},
+      ${m.yesPrice ?? null}, ${m.noPrice ?? null}, ${m.bestBid ?? null}, ${m.bestAsk ?? null},
+      ${m.spread ?? null}, ${m.liquidity ?? null}, ${m.volume ?? null},
+      ${m.timeToResolutionHours ?? null}, ${m.endDateIso ?? null}, ${quoteCollectedAt}, ${quoteCollectedAt},
+      ${JSON.stringify({ ...m, raw: undefined, resolvedOutcome: m.resolvedOutcome })},
+      ${adapter.isDemo ? 1 : 0}
+    )
+  `;
+}
+
 export interface FunnelMetrics {
   observed: number;
   validSnapshot: number;
@@ -299,8 +359,21 @@ export async function scoreNewTrades(
     admitted: 0,
   };
 
+  const maxSignalAgeMs = Math.max(60_000, Math.min(24 * 3_600_000, num('MAX_SIGNAL_AGE_MIN', 20) * 60_000));
+
   let copied = 0;
   for (const ot of unscored) {
+    // Copy signals expire. Only a fresh signal may pull a fresh decision-time
+    // quote; stale signals fall through to a durable skip inside the journal
+    // transaction, never to a refetch (that would be lookahead for old trades).
+    const preDecision = new Date();
+    const freshness = evaluateSignalFreshness(ot.observedAt, ot.timestamp, preDecision, maxSignalAgeMs);
+    if (freshness.fresh) {
+      try {
+        await refreshDecisionSnapshot(db, adapter, ot.marketId, preDecision);
+      } catch { /* evidence evaluator fails closed below */ }
+    }
+
     const wpList = await db`SELECT * FROM "WalletProfile" WHERE "address" = ${ot.walletAddress}`;
     const wp = wpList[0];
 
@@ -377,6 +450,20 @@ export async function scoreNewTrades(
       }
 
       funnel.validSnapshot++;
+
+      if (!freshness.fresh) {
+        const res = await tx`
+          INSERT INTO "DecisionJournal" (
+            "observedTradeId", "walletAddress", "marketId", "decision", "reasonsJson", "risksJson", "isDemo",
+            "marketSnapshotId", "decisionAt", "evidenceVersion", "evidenceStatus", "quoteCollectedAt", "snapshotAgeMs", "maxSnapshotAgeMs"
+          ) VALUES (
+            ${ot.id}, ${ot.walletAddress}, ${ot.marketId}, 'skip', ${JSON.stringify([])}, ${JSON.stringify([freshness.reason])}, ${adapter.isDemo ? 1 : 0},
+            ${evidence.marketSnapshotId}, ${evidence.decisionAt}, 1, ${evidence.status}, ${evidence.quoteCollectedAt}, ${evidence.snapshotAgeMs}, ${evidence.maxSnapshotAgeMs}
+          ) RETURNING "id"
+        `;
+        return { decision: 'skip' as const, journalId: Number(res[0].id), opened: false };
+      }
+
       const market = marketFromSnapshot(snapshot);
       const horizonHours = hoursToResolution(market, decisionAt.getTime());
       const horizonPass = horizonHours !== undefined && horizonHours > 0 && horizonHours <= (rules.maxTimeToResolutionHours ?? 24);

@@ -32,7 +32,7 @@ try {
   const fromEpochId = actives[0]?.id != null ? Number(actives[0].id) : null;
 
   const newRanked = await db`
-    SELECT "address", "shortTermCopyScore" FROM "WalletProfile"
+    SELECT "address", "shortTermCopyScore", "isDemo" FROM "WalletProfile"
     WHERE "scoringEpoch" = ${epochId} AND "shortTermRank" IS NOT NULL
   `;
   const oldRanked = fromEpochId == null ? [] : await db`
@@ -57,6 +57,25 @@ try {
     scoreP90: percentile(scores, 90),
   };
   console.log('epoch activation diff:', JSON.stringify(summary, null, 2));
+
+  // Mode guard: activating an epoch whose ranked wallets were scored in the
+  // OTHER data mode (demo vs live) guarantees zero copies — the cycle would
+  // observe a universe the adapter cannot see. Fail closed unless overridden.
+  const isDemoEnv = process.env.DATA_SOURCE === 'demo';
+  const demoCount = newRanked.filter((r: any) => Number(r.isDemo) === 1).length;
+  const liveCount = newRanked.length - demoCount;
+  console.log(`ranked wallet modes: ${liveCount} live, ${demoCount} demo (current DATA_SOURCE mode: ${isDemoEnv ? 'demo' : 'live'})`);
+  const modeMismatch = isDemoEnv ? liveCount > 0 : demoCount > 0;
+  if (modeMismatch && process.env.EPOCH_ALLOW_MODE_MISMATCH !== 'yes') {
+    console.error('refusing: ranked wallets do not match the current DATA_SOURCE mode. Re-run rescore in the intended mode, or set EPOCH_ALLOW_MODE_MISMATCH=yes if this is deliberate.');
+    process.exit(1);
+  }
+  if (newRanked.length < 25) {
+    console.warn(`WARNING: only ${newRanked.length} ranked wallets — a thin universe yields few signals. This is a data-supply finding, not a reason to lower SHORT_TERM_MIN_TRADES.`);
+  }
+  if (summary.scoreP90 < 0.5) {
+    console.warn(`WARNING: P90 copy score ${summary.scoreP90} is below the default minWalletGlobalScore 0.5 — most ranked wallets would still fail the copy gate. Review rule thresholds BEFORE activating.`);
+  }
 
   if (fromEpochId === epochId) {
     console.log(`epoch ${epochId} is already active — nothing to do`);
