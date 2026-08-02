@@ -15,7 +15,7 @@
  * is how silent crash windows happen.
  */
 
-import { getDb, resetDb } from '../src/lib/db.ts';
+import { getDb, resetDb, withDbRetry } from '../src/lib/db.ts';
 import { readHeartbeats, heartbeat } from '../src/lib/heartbeat.ts';
 import { sendTelegram } from '../src/lib/telegram.ts';
 import { buildReport } from '../src/lib/report.ts';
@@ -37,10 +37,10 @@ async function main(): Promise<void> {
   let rulesTriggered = 0;
   try {
     if (bool('RULES_AUTOUPDATE_ENABLED', false)) {
-      const changes = await autoUpdateRules(db);
+      const changes = await withDbRetry((d) => autoUpdateRules(d), 'autoUpdateRules');
       rulesTriggered = changes.length;
     }
-    const { rules } = await getActiveRules(db);
+    const { rules } = await withDbRetry((d) => getActiveRules(d), 'getActiveRules');
     rulesVersion = rules.version ? `v${rules.version}` : 'v1';
   } catch (e: unknown) {
     problems.push(`rules pass error: ${redact(e)}`);
@@ -48,18 +48,20 @@ async function main(): Promise<void> {
 
   // --- 2. Staleness watchdog ---
   try {
-    const beats = await readHeartbeats();
+    const beats = await withDbRetry(() => readHeartbeats(), 'readHeartbeats');
     const maxAgeMin = num('CYCLE_MAX_AGE_MIN', 150);
+    const rescanMaxAgeMin = num('RESCAN_INTERVAL_DAYS', 30) * 24 * 60 + 1440;
     const nowMs = Date.now();
 
     for (const b of beats) {
+      const jobMaxAgeMin = b.name === 'rescan' ? rescanMaxAgeMin : maxAgeMin;
       const lastOk = b.lastOkAt ? new Date(b.lastOkAt).getTime() : 0;
       const lastRun = b.lastRunAt ? new Date(b.lastRunAt).getTime() : 0;
       const effectiveLast = lastOk || lastRun;
 
       if (effectiveLast > 0) {
         const ageMin = (nowMs - effectiveLast) / 60_000;
-        if (ageMin > maxAgeMin) {
+        if (ageMin > jobMaxAgeMin) {
           problems.push(`${b.name} has not succeeded for ${Math.round(ageMin)} min`);
         }
       }

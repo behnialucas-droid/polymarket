@@ -98,7 +98,7 @@ export async function withDbRetry<T>(
   label = 'db-op',
   maxAttempts = 3,
 ): Promise<T> {
-  const RETRYABLE = /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|Connection terminated|socket hang up|CONNECTION_CLOSED/i;
+  const RETRYABLE = /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|Connection terminated|socket hang up|CONNECTION_CLOSED|CONNECT_TIMEOUT|ENOTFOUND|EHOSTUNREACH/i;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {

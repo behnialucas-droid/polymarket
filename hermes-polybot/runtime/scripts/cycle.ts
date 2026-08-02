@@ -39,15 +39,18 @@ async function main(): Promise<void> {
   // Lease expires after 10 minutes if runner dies without releasing.
   let lockAcquired = false;
   try {
-    const lockRows = await db`
-      UPDATE "RunLock"
-         SET "acquiredAt" = CURRENT_TIMESTAMP,
-             "acquiredBy" = ${RUN_ID},
-             "expiresAt"  = CURRENT_TIMESTAMP + INTERVAL '10 minutes'
-       WHERE "name" = 'cycle'
-         AND ("expiresAt" IS NULL OR "expiresAt" < CURRENT_TIMESTAMP OR "acquiredBy" = ${RUN_ID})
-       RETURNING "name"
-    `;
+    const lockRows = await withDbRetry(
+      (d) => d`
+        UPDATE "RunLock"
+           SET "acquiredAt" = (NOW() AT TIME ZONE 'UTC'),
+               "acquiredBy" = ${RUN_ID},
+               "expiresAt"  = (NOW() AT TIME ZONE 'UTC') + INTERVAL '10 minutes'
+         WHERE "name" = 'cycle'
+           AND ("expiresAt" IS NULL OR "expiresAt" < (NOW() AT TIME ZONE 'UTC') OR "acquiredBy" = ${RUN_ID})
+         RETURNING "name"
+      `,
+      'acquireCycleLock',
+    );
     if (lockRows.length === 0) {
       console.log('skipped: cycle lock held');
       await heartbeat('cycle', true, null, { skipped: 'lock_held', durationMs: Date.now() - t0 });
@@ -120,7 +123,7 @@ async function main(): Promise<void> {
       try {
         await db`
           UPDATE "RunLock"
-             SET "expiresAt" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+             SET "expiresAt" = (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 second'
            WHERE "name" = 'cycle' AND "acquiredBy" = ${RUN_ID}
         `;
       } catch { /* ignore release error on shutdown */ }
