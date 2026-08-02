@@ -236,6 +236,18 @@ export async function monitorTrades(db: postgres.Sql, adapter: DataAdapter): Pro
   return newCount;
 }
 
+/** Active wallet-scoring epoch id, or null when none is active (legacy gate).
+ * Guarded: on a database that predates migration 012 the table is absent, which
+ * must behave exactly like "no active epoch", not crash the cycle. */
+export async function loadActiveScoringEpoch(db: postgres.Sql): Promise<number | null> {
+  try {
+    const rows = await db`SELECT "id" FROM "ScoringEpoch" WHERE "active" = TRUE LIMIT 1`;
+    return rows[0]?.id != null ? Number(rows[0].id) : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface FunnelMetrics {
   observed: number;
   validSnapshot: number;
@@ -257,6 +269,7 @@ export async function scoreNewTrades(
   const riskLimits = await loadActiveRiskLimits(db);
   const costParams = await loadActiveCostModelParams(db);
   const signedAccountId = await getSignedPaperAccount(db, adapter.isDemo);
+  const activeEpochId = await loadActiveScoringEpoch(db);
   const batchSize = Math.max(1, Math.min(10000, num('TRADE_SCORE_BATCH_SIZE', 500)));
 
   const baselines = await db`SELECT "baselineAt" FROM "PaperBaseline" WHERE "active" = TRUE LIMIT 1`;
@@ -301,12 +314,37 @@ export async function scoreNewTrades(
       assetId: ot.assetId ?? undefined, outcomeIndex: ot.outcomeIndex == null ? undefined : Number(ot.outcomeIndex),
       observedAt: ot.observedAt ?? undefined, timestamp: ot.timestamp,
     };
-    const wallet = wp && wp.globalScore != null ? {
+    let wallet = wp && wp.globalScore != null ? {
       globalScore: Number(wp.globalScore), roi30d: Number(wp.roi30d ?? 0), consistencyScore: Number(wp.consistencyScore ?? 0),
       copyabilityScore: Number(wp.copyabilityScore ?? 0), bestCategory: wp.bestCategory,
       categoryStrengths: JSON.parse(wp.categoryStrengthsJson ?? '{}'),
       shortTermShare: Number(wp.shortTermShare ?? 0),
     } : null;
+    let walletSkipReason = 'wallet profile is missing or has no global score at decision time';
+    if (activeEpochId != null) {
+      // Epoch gate: only wallets scored AND ranked under the active short-term
+      // epoch are copy sources. Legacy long-term-era scores never gate a copy.
+      const epochOk = wp
+        && Number(wp.scoringEpoch) === activeEpochId
+        && wp.shortTermCopyScore != null
+        && wp.shortTermRank != null;
+      if (!epochOk) {
+        wallet = null;
+        walletSkipReason = `wallet not scored and ranked in active scoring epoch ${activeEpochId}`;
+      } else {
+        wallet = {
+          globalScore: Number(wp.shortTermCopyScore),
+          roi30d: Number(wp.shortTermPnlPerDollar ?? 0),
+          consistencyScore: Number(wp.shortTermWinRate ?? 0),
+          copyabilityScore: Number(wp.copyabilityScore ?? 0),
+          bestCategory: wp.bestCategory,
+          categoryStrengths: JSON.parse(wp.categoryStrengthsJson ?? '{}'),
+          // Epoch scores are computed exclusively from confirmed short-term
+          // resolutions, so the counted sample is 100% short-term by construction.
+          shortTermShare: 1,
+        };
+      }
+    }
 
     const journal = await db.begin(async (tx) => {
       const decisionAt = new Date();
@@ -348,7 +386,7 @@ export async function scoreNewTrades(
       if (walletPass) funnel.walletGatePassed++;
 
       if (!wallet) {
-        const reason = 'wallet profile is missing or has no global score at decision time';
+        const reason = walletSkipReason;
         const res = await tx`
           INSERT INTO "DecisionJournal" (
             "observedTradeId", "walletAddress", "marketId", "decision", "reasonsJson", "risksJson", "isDemo",
