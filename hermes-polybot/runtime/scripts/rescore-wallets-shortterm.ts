@@ -131,5 +131,6 @@ try {
   console.log(`  ranked universe:     ${top.length} of target ${universeSize}${top.length < universeSize ? ' — SHORTFALL: insufficient resolved short-term history; do not pad' : ''}`);
   console.log(`next step: EPOCH_ID=${epochId} EPOCH_CONFIRM=yes node --experimental-strip-types scripts/activate-scoring-epoch.ts`);
 } finally {
-  await db.end({ timeout: 5 }).catch(() => {});
+  // withDbRetry owns the connection singleton; close whatever it left open.
+  await getDb().end({ timeout: 5 }).catch(() => {});
 }
