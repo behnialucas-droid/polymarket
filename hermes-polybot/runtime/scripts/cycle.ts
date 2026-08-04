@@ -72,6 +72,14 @@ async function main(): Promise<void> {
       'monitorTrades',
     );
 
+    // Evict the connection pool after the long-running monitorTrades step.
+    // PgBouncer (transaction pooling) silently drops idle sockets after its
+    // server-side idle timeout (~10 min). If we reuse the same pool handle for
+    // scoreNewTrades the postgres.js nextWrite Immediate fires on a null socket
+    // and crashes the process — bypassing all try/catch. resetDb() forces a
+    // fresh connection for every subsequent step.
+    resetDb();
+
     // --- 3. Score new trades ---
     const { scored, copied, funnel } = await withDbRetry(
       (db) => scoreNewTrades(db, adapter),
