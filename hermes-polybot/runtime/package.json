@@ -15,7 +15,7 @@
     "migrate": "node --experimental-strip-types scripts/migrate.ts",
     "sync-dashboard-lib": "node --experimental-strip-types scripts/sync-dashboard-lib.ts --write",
     "trial-report": "node --experimental-strip-types scripts/trial-report.ts",
-    "test": "node --experimental-strip-types --test tests/secrets.test.ts tests/rateLimit.test.ts tests/classify.test.ts tests/memory.test.ts tests/scoring.test.ts tests/horizon.test.ts tests/paperLedger.test.ts tests/signedPaperLedger.test.ts tests/decisionEvidence.test.ts tests/demoAdapter.test.ts tests/decimal.test.ts tests/costModel.test.ts tests/admission.test.ts tests/signedRequest.test.ts tests/settlement.test.ts tests/stats.test.ts tests/safety.test.ts tests/telegram.test.ts && node --experimental-strip-types scripts/sync-dashboard-lib.ts --check",
+    "test": "node --experimental-strip-types --test tests/secrets.test.ts tests/rateLimit.test.ts tests/classify.test.ts tests/memory.test.ts tests/scoring.test.ts tests/horizon.test.ts tests/paperLedger.test.ts tests/signedPaperLedger.test.ts tests/decisionEvidence.test.ts tests/demoAdapter.test.ts tests/decimal.test.ts tests/costModel.test.ts tests/admission.test.ts tests/signedRequest.test.ts tests/settlement.test.ts tests/stats.test.ts tests/safety.test.ts tests/telegram.test.ts tests/shortTermWalletScoring.test.ts tests/baselineReset.test.ts && node --experimental-strip-types scripts/sync-dashboard-lib.ts --check",
     "test:db": "node --experimental-strip-types --test tests/paper.test.ts tests/rules.test.ts tests/scoreNewTradesBatch.test.ts",
     "test:all": "npm run test && npm run test:db",
     "depcheck": "node --experimental-strip-types scripts/assert-one-dep.ts"

@@ -39,15 +39,18 @@ async function main(): Promise<void> {
   // Lease expires after 10 minutes if runner dies without releasing.
   let lockAcquired = false;
   try {
-    const lockRows = await db`
-      UPDATE "RunLock"
-         SET "acquiredAt" = CURRENT_TIMESTAMP,
-             "acquiredBy" = ${RUN_ID},
-             "expiresAt"  = CURRENT_TIMESTAMP + INTERVAL '10 minutes'
-       WHERE "name" = 'cycle'
-         AND ("expiresAt" IS NULL OR "expiresAt" < CURRENT_TIMESTAMP OR "acquiredBy" = ${RUN_ID})
-       RETURNING "name"
-    `;
+    const lockRows = await withDbRetry(
+      (d) => d`
+        UPDATE "RunLock"
+           SET "acquiredAt" = (NOW() AT TIME ZONE 'UTC'),
+               "acquiredBy" = ${RUN_ID},
+               "expiresAt"  = (NOW() AT TIME ZONE 'UTC') + INTERVAL '10 minutes'
+         WHERE "name" = 'cycle'
+           AND ("expiresAt" IS NULL OR "expiresAt" < (NOW() AT TIME ZONE 'UTC') OR "acquiredBy" = ${RUN_ID})
+         RETURNING "name"
+      `,
+      'acquireCycleLock',
+    );
     if (lockRows.length === 0) {
       console.log('skipped: cycle lock held');
       await heartbeat('cycle', true, null, { skipped: 'lock_held', durationMs: Date.now() - t0 });
@@ -69,8 +72,16 @@ async function main(): Promise<void> {
       'monitorTrades',
     );
 
+    // Evict the connection pool after the long-running monitorTrades step.
+    // PgBouncer (transaction pooling) silently drops idle sockets after its
+    // server-side idle timeout (~10 min). If we reuse the same pool handle for
+    // scoreNewTrades the postgres.js nextWrite Immediate fires on a null socket
+    // and crashes the process — bypassing all try/catch. resetDb() forces a
+    // fresh connection for every subsequent step.
+    resetDb();
+
     // --- 3. Score new trades ---
-    const { scored, copied } = await withDbRetry(
+    const { scored, copied, funnel } = await withDbRetry(
       (db) => scoreNewTrades(db, adapter),
       'scoreNewTrades',
     );
@@ -101,11 +112,11 @@ async function main(): Promise<void> {
     );
 
     const durationMs = Date.now() - t0;
-    const summary = `observed:${observed} scored:${scored} copied:${copied} pnl:${pnlUpdated} marked:${marked} resolved:${resolved} evidence:${evidenced} settled:${settled} timing:${durationMs}ms`;
+    const summary = `observed:${observed} scored:${scored} copied:${copied} funnel:[validSnap:${funnel?.validSnapshot ?? 0}, horizonPass:${funnel?.horizonGatePassed ?? 0}, walletPass:${funnel?.walletGatePassed ?? 0}, admitted:${funnel?.admitted ?? 0}] pnl:${pnlUpdated} marked:${marked} resolved:${resolved} evidence:${evidenced} settled:${settled} timing:${durationMs}ms`;
     console.log(summary);
 
     await heartbeat('cycle', true, null, {
-      observed, scored, copied, pnlUpdated, marked, resolved, evidenced, settled, durationMs
+      observed, scored, copied, funnel, pnlUpdated, marked, resolved, evidenced, settled, durationMs
     });
   } catch (e: unknown) {
     const errStr = redact(e);
@@ -120,7 +131,7 @@ async function main(): Promise<void> {
       try {
         await db`
           UPDATE "RunLock"
-             SET "expiresAt" = CURRENT_TIMESTAMP - INTERVAL '1 second'
+             SET "expiresAt" = (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 second'
            WHERE "name" = 'cycle' AND "acquiredBy" = ${RUN_ID}
         `;
       } catch { /* ignore release error on shutdown */ }

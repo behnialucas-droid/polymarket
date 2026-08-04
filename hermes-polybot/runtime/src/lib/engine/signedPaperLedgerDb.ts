@@ -65,6 +65,75 @@ export async function getSignedPaperAccount(db: postgres.Sql, isDemo: boolean): 
   return Number(rows[0].id);
 }
 
+export async function resetSignedPaperAccountEquity(
+  db: postgres.Sql | postgres.TransactionSql,
+  isDemo: boolean,
+  targetEquity = 10000,
+  reason = 'Baseline reset to 10000 USD',
+): Promise<{ accountId: number; priorStartingCash: number; newStartingCash: number }> {
+  const accountId = await getSignedPaperAccount(db as postgres.Sql, isDemo);
+
+  const [positionCounts] = await db`
+    SELECT COUNT(*)::int AS count
+    FROM "SignedPaperPosition"
+    WHERE "paperAccountId" = ${accountId}
+      AND "status" IN ('open', 'awaiting_settlement')
+      AND ("longShares" > 0 OR "shortShares" > 0)
+  `;
+  const [lotCounts] = await db`
+    SELECT COUNT(*)::int AS count
+    FROM "SignedPaperLot" l
+    JOIN "SignedPaperPosition" p ON p."id" = l."signedPaperPositionId"
+    WHERE p."paperAccountId" = ${accountId}
+      AND l."remainingShares" > 0
+  `;
+
+  const openPositions = Number(positionCounts.count);
+  const openLots = Number(lotCounts.count);
+
+  if (openPositions > 0 || openLots > 0) {
+    throw new Error(
+      `Cannot perform equity reset: account has ${openPositions} open/unsettled position(s) and ${openLots} open lot(s). All open positions must be settled or archived before resetting equity.`
+    );
+  }
+
+  const [account] = await db`
+    SELECT "startingCash" FROM "PaperAccount" WHERE "id" = ${accountId} FOR UPDATE
+  `;
+  const priorStartingCash = Number(account.startingCash);
+
+  await db`
+    UPDATE "PaperAccount"
+    SET "startingCash" = ${targetEquity}
+    WHERE "id" = ${accountId}
+  `;
+
+  const idempotencyKey = `reset:baseline:${accountId}:${Date.now()}`;
+  await db`
+    INSERT INTO "SignedPaperLedgerEntry" (
+      "paperAccountId", "signedPaperPositionId", "paperStrategyActionId", "eventType",
+      "quantityShares", "price", "collateralDelta", "realizedPnlDelta", "idempotencyKey", "metadataJson"
+    ) VALUES (
+      ${accountId}, NULL, NULL, 'BASELINE_RESET',
+      0, NULL, 0, 0,
+      ${idempotencyKey},
+      ${JSON.stringify({
+        priorStartingCash,
+        newStartingCash: targetEquity,
+        reason,
+        resetAt: new Date().toISOString(),
+      })}
+    )
+  `;
+
+  return {
+    accountId,
+    priorStartingCash,
+    newStartingCash: targetEquity,
+  };
+}
+
+
 export async function applySignedPaperLedgerActionInTransaction(
   db: postgres.Sql | postgres.TransactionSql,
   request: SignedPaperLedgerRequest,

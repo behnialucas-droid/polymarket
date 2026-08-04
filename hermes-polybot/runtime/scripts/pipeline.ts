@@ -4,7 +4,7 @@ import { getAdapter, type DataAdapter } from '../src/lib/adapters/index.ts';
 import { scoreWallet, walletStatus, type TradeWithMarket } from '../src/lib/engine/walletScoring.ts';
 import { scoreTrade } from '../src/lib/engine/tradeScoring.ts';
 import { getActiveRules } from '../src/lib/engine/rules.ts';
-import { evaluateDecisionEvidence, type DecisionSnapshotEvidence } from '../src/lib/engine/decisionEvidence.ts';
+import { evaluateDecisionEvidence, evaluateSignalFreshness, MAX_DECISION_SNAPSHOT_AGE_MS, MAX_SIGNAL_AGE_MS_DEFAULT, type DecisionSnapshotEvidence } from '../src/lib/engine/decisionEvidence.ts';
 import { evaluateAdmission } from '../src/lib/engine/admission.ts';
 import { loadActiveCostModelParams, loadActiveRiskLimits, loadPortfolioState, recordAdmissionCheck } from '../src/lib/engine/admissionDb.ts';
 import { buildSignedRequest } from '../src/lib/engine/signedRequest.ts';
@@ -121,12 +121,24 @@ export async function profileWallet(db: postgres.Sql, adapter: DataAdapter, addr
 export async function monitorTrades(db: postgres.Sql, adapter: DataAdapter): Promise<number> {
   const { createHash } = await import('node:crypto');
   const scanLimit = Number(process.env.WALLET_SCAN_LIMIT ?? 500);
-  const tracked = await db`
-    SELECT "address" FROM "WalletProfile"
-    WHERE "memoryStatus" IN ('copy','watch') OR "status" IN ('track','watch','copy')
-    ORDER BY "lastScannedAt" ASC NULLS FIRST
-    LIMIT ${scanLimit}
-  `;
+  // Observation follows the ACTIVE scoring epoch: when one exists, watch the
+  // epoch-ranked universe (rank order = score order), otherwise the legacy
+  // status-driven set. Without this, the pipeline keeps observing legacy
+  // long-term wallets whose signals the epoch gate then rejects — zero copies.
+  const monitorEpochId = await loadActiveScoringEpoch(db);
+  const tracked = monitorEpochId != null
+    ? await db`
+        SELECT "address" FROM "WalletProfile"
+        WHERE "scoringEpoch" = ${monitorEpochId} AND "shortTermRank" IS NOT NULL
+        ORDER BY "shortTermRank" ASC
+        LIMIT ${scanLimit}
+      `
+    : await db`
+        SELECT "address" FROM "WalletProfile"
+        WHERE "memoryStatus" IN ('copy','watch') OR "status" IN ('track','watch','copy')
+        ORDER BY "lastScannedAt" ASC NULLS FIRST
+        LIMIT ${scanLimit}
+      `;
   if (tracked.length === 0) return 0;
 
   // Pre-calculate HWM timestamps for all tracked wallets in a single query
@@ -236,24 +248,132 @@ export async function monitorTrades(db: postgres.Sql, adapter: DataAdapter): Pro
   return newCount;
 }
 
+/** Active wallet-scoring epoch id, or null when none is active (legacy gate).
+ * Guarded: on a database that predates migration 012 the table is absent, which
+ * must behave exactly like "no active epoch", not crash the cycle. */
+export async function loadActiveScoringEpoch(db: postgres.Sql): Promise<number | null> {
+  try {
+    const rows = await db`SELECT "id" FROM "ScoringEpoch" WHERE "active" = TRUE LIMIT 1`;
+    return rows[0]?.id != null ? Number(rows[0].id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Decision-time snapshot refresh for LIVE signals only.
+ *
+ * The no-lookahead contract forbids pricing an OLD signal with TODAY's quote.
+ * It does not forbid collecting the decision-time quote for a signal being
+ * decided right now — that quote IS the decision evidence. Callers must gate on
+ * signal freshness BEFORE calling this. If the latest persisted snapshot is
+ * already fresh enough, nothing is fetched. Fetch failures are swallowed: the
+ * evidence evaluator then fails closed with a durable MISSING/STALE skip. */
+export async function refreshDecisionSnapshot(
+  db: postgres.Sql,
+  adapter: DataAdapter,
+  marketId: string,
+  decisionAt: Date,
+): Promise<void> {
+  const latest = await db`
+    SELECT "quoteCollectedAt" FROM "MarketSnapshot"
+    WHERE "marketId" = ${marketId}
+    ORDER BY "quoteCollectedAt" DESC NULLS LAST, "id" DESC
+    LIMIT 1
+  `;
+  const at = latest[0]?.quoteCollectedAt ? new Date(latest[0].quoteCollectedAt).getTime() : NaN;
+  const ageMs = decisionAt.getTime() - at;
+  if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= MAX_DECISION_SNAPSHOT_AGE_MS) return;
+
+  let m: MarketData;
+  try {
+    m = await adapter.fetchMarket(marketId);
+  } catch {
+    return; // fail closed downstream: evidence evaluator records the skip
+  }
+  const quoteCollectedAt = new Date().toISOString();
+  await db`
+    INSERT INTO "MarketSnapshot" (
+      "marketId", "conditionId", "question", "category", "yesPrice", "noPrice",
+      "bestBid", "bestAsk", "spread", "liquidity", "volume", "timeToResolution", "endDate",
+      "collectedAt", "quoteCollectedAt", "rawMarketJson", "isDemo"
+    )
+    VALUES (
+      ${m.marketId}, ${m.conditionId ?? null}, ${m.question ?? null}, ${m.category ?? null},
+      ${m.yesPrice ?? null}, ${m.noPrice ?? null}, ${m.bestBid ?? null}, ${m.bestAsk ?? null},
+      ${m.spread ?? null}, ${m.liquidity ?? null}, ${m.volume ?? null},
+      ${m.timeToResolutionHours ?? null}, ${m.endDateIso ?? null}, ${quoteCollectedAt}, ${quoteCollectedAt},
+      ${JSON.stringify({ ...m, raw: undefined, resolvedOutcome: m.resolvedOutcome })},
+      ${adapter.isDemo ? 1 : 0}
+    )
+  `;
+}
+
+export interface FunnelMetrics {
+  observed: number;
+  validSnapshot: number;
+  horizonGatePassed: number;
+  walletGatePassed: number;
+  paperCopy: number;
+  admitted: number;
+}
+
 /** Score unscored trades from immutable market evidence; never refetch current market state.
  * An admitted paper_copy flows into the signed v2 ledger inside the SAME transaction as
  * its journal and admission evidence. Legacy long-only PaperTrade/PaperLedger is frozen
  * history and is no longer written by this pipeline. */
-export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Promise<{ scored: number; copied: number }> {
+export async function scoreNewTrades(
+  db: postgres.Sql,
+  adapter: DataAdapter,
+): Promise<{ scored: number; copied: number; funnel: FunnelMetrics }> {
   const { rules } = await getActiveRules(db);
   const riskLimits = await loadActiveRiskLimits(db);
   const costParams = await loadActiveCostModelParams(db);
   const signedAccountId = await getSignedPaperAccount(db, adapter.isDemo);
+  const activeEpochId = await loadActiveScoringEpoch(db);
   const batchSize = Math.max(1, Math.min(10000, num('TRADE_SCORE_BATCH_SIZE', 500)));
-  const unscored = await db`
-    SELECT ot.* FROM "ObservedTrade" ot
-    WHERE NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
-    ORDER BY ot."id" ASC
-    LIMIT ${batchSize}
-  `;
+
+  const baselines = await db`SELECT "baselineAt" FROM "PaperBaseline" WHERE "active" = TRUE LIMIT 1`;
+  const activeBaselineAt = baselines[0]?.baselineAt ?? null;
+
+  const unscored = activeBaselineAt
+    ? await db`
+        SELECT ot.* FROM "ObservedTrade" ot
+        WHERE COALESCE(ot."observedAt"::timestamp, ot."createdAt") >= ${activeBaselineAt}
+          AND NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
+        ORDER BY ot."id" ASC
+        LIMIT ${batchSize}
+      `
+    : await db`
+        SELECT ot.* FROM "ObservedTrade" ot
+        WHERE NOT EXISTS (SELECT 1 FROM "DecisionJournal" dj WHERE dj."observedTradeId" = ot."id")
+        ORDER BY ot."id" ASC
+        LIMIT ${batchSize}
+      `;
+
+  const funnel: FunnelMetrics = {
+    observed: unscored.length,
+    validSnapshot: 0,
+    horizonGatePassed: 0,
+    walletGatePassed: 0,
+    paperCopy: 0,
+    admitted: 0,
+  };
+
+  const maxSignalAgeMs = Math.max(60_000, Math.min(24 * 3_600_000, num('MAX_SIGNAL_AGE_MIN', 20) * 60_000));
+
   let copied = 0;
   for (const ot of unscored) {
+    // Copy signals expire. Only a fresh signal may pull a fresh decision-time
+    // quote; stale signals fall through to a durable skip inside the journal
+    // transaction, never to a refetch (that would be lookahead for old trades).
+    const preDecision = new Date();
+    const freshness = evaluateSignalFreshness(ot.observedAt, ot.timestamp, preDecision, maxSignalAgeMs);
+    if (freshness.fresh) {
+      try {
+        await refreshDecisionSnapshot(db, adapter, ot.marketId, preDecision);
+      } catch { /* evidence evaluator fails closed below */ }
+    }
+
     const wpList = await db`SELECT * FROM "WalletProfile" WHERE "address" = ${ot.walletAddress}`;
     const wp = wpList[0];
 
@@ -267,11 +387,37 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
       assetId: ot.assetId ?? undefined, outcomeIndex: ot.outcomeIndex == null ? undefined : Number(ot.outcomeIndex),
       observedAt: ot.observedAt ?? undefined, timestamp: ot.timestamp,
     };
-    const wallet = wp && wp.globalScore != null ? {
+    let wallet = wp && wp.globalScore != null ? {
       globalScore: Number(wp.globalScore), roi30d: Number(wp.roi30d ?? 0), consistencyScore: Number(wp.consistencyScore ?? 0),
       copyabilityScore: Number(wp.copyabilityScore ?? 0), bestCategory: wp.bestCategory,
       categoryStrengths: JSON.parse(wp.categoryStrengthsJson ?? '{}'),
+      shortTermShare: Number(wp.shortTermShare ?? 0),
     } : null;
+    let walletSkipReason = 'wallet profile is missing or has no global score at decision time';
+    if (activeEpochId != null) {
+      // Epoch gate: only wallets scored AND ranked under the active short-term
+      // epoch are copy sources. Legacy long-term-era scores never gate a copy.
+      const epochOk = wp
+        && Number(wp.scoringEpoch) === activeEpochId
+        && wp.shortTermCopyScore != null
+        && wp.shortTermRank != null;
+      if (!epochOk) {
+        wallet = null;
+        walletSkipReason = `wallet not scored and ranked in active scoring epoch ${activeEpochId}`;
+      } else {
+        wallet = {
+          globalScore: Number(wp.shortTermCopyScore),
+          roi30d: Number(wp.shortTermPnlPerDollar ?? 0),
+          consistencyScore: Number(wp.shortTermWinRate ?? 0),
+          copyabilityScore: Number(wp.copyabilityScore ?? 0),
+          bestCategory: wp.bestCategory,
+          categoryStrengths: JSON.parse(wp.categoryStrengthsJson ?? '{}'),
+          // Epoch scores are computed exclusively from confirmed short-term
+          // resolutions, so the counted sample is 100% short-term by construction.
+          shortTermShare: 1,
+        };
+      }
+    }
 
     const journal = await db.begin(async (tx) => {
       const decisionAt = new Date();
@@ -303,8 +449,31 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
         return { decision: 'skip' as const, journalId: Number(res[0].id), opened: false };
       }
 
+      funnel.validSnapshot++;
+
+      if (!freshness.fresh) {
+        const res = await tx`
+          INSERT INTO "DecisionJournal" (
+            "observedTradeId", "walletAddress", "marketId", "decision", "reasonsJson", "risksJson", "isDemo",
+            "marketSnapshotId", "decisionAt", "evidenceVersion", "evidenceStatus", "quoteCollectedAt", "snapshotAgeMs", "maxSnapshotAgeMs"
+          ) VALUES (
+            ${ot.id}, ${ot.walletAddress}, ${ot.marketId}, 'skip', ${JSON.stringify([])}, ${JSON.stringify([freshness.reason])}, ${adapter.isDemo ? 1 : 0},
+            ${evidence.marketSnapshotId}, ${evidence.decisionAt}, 1, ${evidence.status}, ${evidence.quoteCollectedAt}, ${evidence.snapshotAgeMs}, ${evidence.maxSnapshotAgeMs}
+          ) RETURNING "id"
+        `;
+        return { decision: 'skip' as const, journalId: Number(res[0].id), opened: false };
+      }
+
+      const market = marketFromSnapshot(snapshot);
+      const horizonHours = hoursToResolution(market, decisionAt.getTime());
+      const horizonPass = horizonHours !== undefined && horizonHours > 0 && horizonHours <= (rules.maxTimeToResolutionHours ?? 24);
+      if (horizonPass) funnel.horizonGatePassed++;
+
+      const walletPass = Boolean(wallet && wallet.globalScore >= rules.minWalletGlobalScore && wallet.shortTermShare >= rules.minShortTermShare);
+      if (walletPass) funnel.walletGatePassed++;
+
       if (!wallet) {
-        const reason = 'wallet profile is missing or has no global score at decision time';
+        const reason = walletSkipReason;
         const res = await tx`
           INSERT INTO "DecisionJournal" (
             "observedTradeId", "walletAddress", "marketId", "decision", "reasonsJson", "risksJson", "isDemo",
@@ -317,7 +486,6 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
         return { decision: 'skip' as const, journalId: Number(res[0].id), opened: false };
       }
 
-      const market = marketFromSnapshot(snapshot);
       const d = scoreTrade(trade, market, wallet, rules, decisionAt.getTime());
       const res = await tx`
         INSERT INTO "DecisionJournal" ("observedTradeId", "walletAddress", "marketId", "decision", "copyScore", "confidence", "reasonsJson", "risksJson",
@@ -333,6 +501,7 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
       if (d.decision !== 'paper_copy') {
         return { decision: d.decision, journalId, opened: false };
       }
+      funnel.paperCopy++;
 
       // Risk admission + signed ledger, same transaction as the journal.
       const requestedNotional = d.simulatedPositionSize;
@@ -416,9 +585,12 @@ export async function scoreNewTrades(db: postgres.Sql, adapter: DataAdapter): Pr
       return { decision: d.decision, journalId, opened: !ledgerResult.duplicate };
     });
 
-    if (journal.opened) copied++;
+    if (journal.opened) {
+      copied++;
+      funnel.admitted++;
+    }
   }
-  return { scored: unscored.length, copied };
+  return { scored: unscored.length, copied, funnel };
 }
 
 export { getAdapter };

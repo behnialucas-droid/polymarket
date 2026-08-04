@@ -1,5 +1,43 @@
 export const MAX_DECISION_SNAPSHOT_AGE_MS = 60_000;
 
+/** Copy signals expire: a source trade older than this at decision time is never
+ * copied, no matter how fresh the quote is. Refreshing a quote for an old signal
+ * would be lookahead-adjacent — the wallet's edge was priced in long ago. */
+export const MAX_SIGNAL_AGE_MS_DEFAULT = 20 * 60_000;
+
+export interface SignalFreshness {
+  fresh: boolean;
+  /** null when no usable timestamp exists (fails closed to not-fresh). */
+  ageMs: number | null;
+  reason: string;
+}
+
+/** Age of the source signal at decision time. Prefers Hermes observation time
+ * (observedAt); falls back to the provider event timestamp. Unparsable or
+ * future timestamps fail closed to not-fresh. Pure: clock is a parameter. */
+export function evaluateSignalFreshness(
+  observedAtIso: string | Date | null | undefined,
+  providerTimestampIso: string | Date | null | undefined,
+  decisionAt: Date,
+  maxSignalAgeMs = MAX_SIGNAL_AGE_MS_DEFAULT,
+): SignalFreshness {
+  if (!Number.isSafeInteger(maxSignalAgeMs) || maxSignalAgeMs <= 0) {
+    throw new Error('maxSignalAgeMs must be a positive safe integer');
+  }
+  const anchor = asValidDate(observedAtIso ?? null) ?? asValidDate(providerTimestampIso ?? null);
+  if (!anchor) {
+    return { fresh: false, ageMs: null, reason: 'source signal has no usable timestamp' };
+  }
+  const ageMs = decisionAt.getTime() - anchor.getTime();
+  if (ageMs < 0) {
+    return { fresh: false, ageMs, reason: `source signal timestamp is ${Math.abs(ageMs)}ms in the future` };
+  }
+  if (ageMs > maxSignalAgeMs) {
+    return { fresh: false, ageMs, reason: `source signal is ${ageMs}ms old (copy limit ${maxSignalAgeMs}ms)` };
+  }
+  return { fresh: true, ageMs, reason: 'source signal is fresh enough to copy' };
+}
+
 export type EvidenceStatus = 'VALID' | 'MISSING_SNAPSHOT' | 'STALE_SNAPSHOT' | 'FUTURE_SNAPSHOT';
 
 export interface DecisionSnapshotEvidence {

@@ -21,23 +21,29 @@ function fakeAdapter(): DataAdapter {
 }
 
 test('scoreNewTrades batch selection: bounded size, id ASC ordering, exclusion of journaled trades, and empty backlog', async () => {
-  const testWallet = '0xbatchtestwallet';
+  const testWallet = `0xbatch_${Date.now()}`;
   const testMarket = 'm_batch_test';
 
   // Cleanup test fixture rows
-  await db`DELETE FROM "AdmissionCheck" WHERE "observedTradeId" IN (SELECT "id" FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet})`;
-  await db`DELETE FROM "DecisionJournal" WHERE "walletAddress" = ${testWallet}`;
-  await db`DELETE FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet}`;
+  await db`DELETE FROM "PaperBaseline"`;
+  const targetTradeIds = (await db`SELECT "id" FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet}`).map((r: any) => r.id);
+  if (targetTradeIds.length > 0) {
+    await db`DELETE FROM "PaperStrategyAction" WHERE "sourceObservedTradeId" = ANY(${targetTradeIds})`;
+    await db`DELETE FROM "AdmissionCheck" WHERE "observedTradeId" = ANY(${targetTradeIds})`;
+    await db`DELETE FROM "DecisionJournal" WHERE "observedTradeId" = ANY(${targetTradeIds}) OR "walletAddress" = ${testWallet}`;
+    await db`DELETE FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet}`;
+  }
 
   // Insert 5 test ObservedTrades
+  const nowIso = new Date().toISOString();
   const insertedIds: number[] = [];
   for (let i = 1; i <= 5; i++) {
     const tradeHash = `hash_batch_test_${Date.now()}_${i}`;
     const [row] = await db`
       INSERT INTO "ObservedTrade" (
-        "walletAddress", "marketId", "outcome", "side", "walletEntryPrice", "size", "timestamp", "tradeHash", "isDemo"
+        "walletAddress", "marketId", "outcome", "side", "walletEntryPrice", "size", "timestamp", "observedAt", "tradeHash", "isDemo"
       ) VALUES (
-        ${testWallet}, ${testMarket}, 'YES', 'BUY', 0.5, 100, ${new Date().toISOString()}, ${tradeHash}, 1
+        ${testWallet}, ${testMarket}, 'YES', 'BUY', 0.5, 100, ${nowIso}, ${nowIso}, ${tradeHash}, 1
       ) RETURNING "id"
     `;
     insertedIds.push(Number(row.id));
@@ -119,13 +125,17 @@ test('scoreNewTrades batch selection: bounded size, id ASC ordering, exclusion o
   assert.ok(pipelineRes.scored <= 3, `scoreNewTrades must respect TRADE_SCORE_BATCH_SIZE (scored ${pipelineRes.scored})`);
 
   // Cleanup test fixture rows
-  await db`DELETE FROM "AdmissionCheck" WHERE "observedTradeId" IN (SELECT "id" FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet})`;
-  await db`DELETE FROM "DecisionJournal" WHERE "walletAddress" = ${testWallet}`;
-  await db`DELETE FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet}`;
+  const targetTradeIds2 = (await db`SELECT "id" FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet}`).map((r: any) => r.id);
+  if (targetTradeIds2.length > 0) {
+    await db`DELETE FROM "PaperStrategyAction" WHERE "sourceObservedTradeId" = ANY(${targetTradeIds2})`;
+    await db`DELETE FROM "AdmissionCheck" WHERE "observedTradeId" = ANY(${targetTradeIds2})`;
+    await db`DELETE FROM "DecisionJournal" WHERE "observedTradeId" = ANY(${targetTradeIds2}) OR "walletAddress" = ${testWallet}`;
+    await db`DELETE FROM "ObservedTrade" WHERE "walletAddress" = ${testWallet}`;
+  }
   delete process.env.TRADE_SCORE_BATCH_SIZE;
 });
 
-test('TRADE_SCORE_BATCH_SIZE env var parsing: default, custom, and invalid fail-closed check', () => {
+test('TRADE_SCORE_BATCH_SIZE env var parsing: default, custom, and invalid fail-closed check', async () => {
   delete process.env.TRADE_SCORE_BATCH_SIZE;
   assert.equal(num('TRADE_SCORE_BATCH_SIZE', 500), 500);
 
@@ -139,4 +149,5 @@ test('TRADE_SCORE_BATCH_SIZE env var parsing: default, custom, and invalid fail-
   );
 
   delete process.env.TRADE_SCORE_BATCH_SIZE;
+  await db.end({ timeout: 5 });
 });
