@@ -108,8 +108,11 @@ export class PolymarketAdapter implements DataAdapter {
     const yes = Number(prices[0] ?? m.bestAsk ?? 0);
     const bid = Number(m.bestBid ?? 0);
     const ask = Number(m.bestAsk ?? 0);
+    // CRITICAL: use conditionId as the canonical marketId so MarketSnapshot rows
+    // are stored under the same key that ObservedTrade.marketId uses (conditionId hex).
+    // m.id is a Gamma integer that does NOT match the conditionId from fetchWalletTrades.
     return {
-      marketId: String(m.id ?? marketId),
+      marketId: String(m.conditionId ?? marketId),
       conditionId: m.conditionId,
       question: m.question,
       category: m.category,
